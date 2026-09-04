@@ -21,6 +21,7 @@ const (
 	actFocusPrev = "focus-prev"
 	actHelp      = "help"
 	actSettings  = "settings"
+	actControl   = "control"
 	actLock      = "lock"
 	actUnlock    = "unlock"
 	actZoomIn    = "zoom-in"
@@ -42,7 +43,7 @@ var baseBinds = map[string]string{
 	"tab":       actFocusNext,
 	"shift+tab": actFocusPrev,
 	"f1":        actHelp,
-	"f3":        actSettings,
+	"f2":        actControl,
 	// Per-pane zoom. The modifier makes these global (NAV and LOCKED alike);
 	// "instead of Ctrl" because Ctrl +/- is the terminal's own font zoom.
 	// Both "=" and "+" are bound so an unshifted or shifted key both work.
@@ -105,9 +106,12 @@ type Model struct {
 	pendingEsc bool // one Esc seen inside a locked raw pane; a second = literal
 
 	overlay       overlayKind
+	overlayReturn overlayKind // where Esc from a nested overlay lands (one level)
 	confirmKind   confirmKind
 	confirmPrompt string
 	confirmLeaf   int // leaf index a cfKill dialog targets, captured at open time
+
+	ctrlRow int // F2 control-panel cursor row
 
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)
@@ -273,6 +277,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(key)
 	case ovSettings:
 		return m.handleSettingsKey(msg)
+	case ovControl:
+		return m.handleControlKey(msg)
 	}
 
 	// Global bindings win unconditionally.
@@ -342,10 +348,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // isGlobalKey reports whether a key is one the engine intercepts even inside a
-// locked pane: anything carrying the modifier, plus F1 and F3. Ctrl+C is NOT
-// here on purpose — while locked it belongs to the pane's process.
+// locked pane: anything carrying the modifier, plus F1 (help) and F2 (control
+// panel). F3 is deliberately NOT here any more — it now falls through to the
+// focused widget so a locked shell/editor keeps its F3. Ctrl+C is also absent
+// on purpose — while locked it belongs to the pane's process.
 func (m *Model) isGlobalKey(key string) bool {
-	return key == "f1" || key == "f3" || strings.HasPrefix(key, m.mod+"+")
+	return key == "f1" || key == "f2" || strings.HasPrefix(key, m.mod+"+")
 }
 
 func (m *Model) forwardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -372,7 +380,10 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 			m.overlay = ovHelp
 		}
 	case actSettings:
+		m.overlayReturn = ovNone
 		m.openSettings()
+	case actControl:
+		m.openControl()
 	case actLock:
 		m.locked = true
 	case actUnlock:
@@ -530,6 +541,8 @@ func (m *Model) View() string {
 		out = m.renderConfirm(out)
 	case ovSettings:
 		out = m.renderSettings(out)
+	case ovControl:
+		out = m.renderControl(out)
 	}
 	return out
 }

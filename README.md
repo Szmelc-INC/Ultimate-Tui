@@ -98,19 +98,25 @@ Two modes, shown in the bottom status bar:
 
 | mode       | keys |
 |------------|------|
-| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `F1` help · `F3` theme & style · `Ctrl+C` quit (asks first) |
+| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `mod+= / mod+- / mod+0` grow / shrink / reset the focused pane · `F1` help · `F2` controls · `Ctrl+C` quit (asks first) |
 | **LOCKED** | every key goes to the pane's widget (scroll a `text` pane, drive `htop`/`vim` in a `shell` pane) · `Esc` releases · `Esc Esc` sends a literal `Esc` to a `shell` child · `Ctrl+C` kills **this pane's** process (asks first), program keeps running |
 
 `mod` is the modifier — **Alt** by default. Terminals cannot tell left Alt from
-right Alt, so any Alt press counts. `mod+…`, `F1` and `F3` are caught even while
-a pane is LOCKED. `Ctrl+C` is **not** a bare quit: in NAV it raises a `[Y/n]`
-confirm dialog, and while LOCKED it belongs to the pane (kills just that
-process, on confirm). The way out of a locked pane is `Esc` then `Ctrl+C`.
+right Alt, so any Alt press counts. `mod+…`, `F1` and `F2` are caught even while
+a pane is LOCKED (`F3` is not — it falls through to the widget). `Ctrl+C` is
+**not** a bare quit: in NAV it raises a `[Y/n]` confirm dialog, and while LOCKED
+it belongs to the pane (kills just that process, on confirm). The way out of a
+locked pane is `Esc` then `Ctrl+C`.
+
+**Per-pane zoom** — `mod+=` (or `mod++`) grows the focused pane, `mod+-` shrinks
+it, `mod+0` resets. The bias is applied in every ancestor split and siblings give
+up the space; the total never changes, so nothing shears.
 
 **`F1`** opens a centered popup listing every active binding — the engine's plus
-this TUI's own `keybindings`. **`F3`** opens a live theme & style picker:
-`↑↓` preview, `←→` switch column, `Enter` applies (and saves to the global
-config), `Esc` reverts.
+this TUI's own `keybindings`. **`F2`** opens the control panel: a summary of the
+effective runner settings plus a **Theme & style** row that opens the live
+picker (`↑↓` preview, `←→` switch column, `Enter` applies and saves to the global
+config, `Esc` reverts — either way you land back on the F2 menu).
 
 ### Global runner config
 
@@ -130,7 +136,7 @@ to **every** TUI you run. All keys optional; a missing file is fine. Run
 
 `theme` is the colour palette (`""` / `dark` / `light` all mean auto-detect);
 `style` is the box-drawing + glyph set (`ascii` for terminals without a Nerd
-Font). Both are also switchable at runtime with **`F3`**, and
+Font). Both are also switchable at runtime from the **`F2`** control panel, and
 `ultui render <cfg> theme=NAME style=NAME` previews a combo headlessly.
 
 ### Mouse
@@ -171,8 +177,9 @@ internal/widget   Widget interface + kind registry; text · markdown · command 
                   shell — scrollBox = bubbles/viewport (scroll.go),
                   keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
-                  overlays: F1 help / Ctrl+C confirm (overlay.go) + F3 theme
-                  picker (settings.go), palettes + stylesets (theme.go),
+                  overlays: F1 help / Ctrl+C confirm (overlay.go) + F2 control
+                  panel (control.go) + theme picker (settings.go),
+                  per-pane zoom math (layout.go), palettes + stylesets (theme.go),
                   status bar (chrome.go), bounded headless Snapshot
 main.go           run / validate / render / config CLI
 examples/         hello · dashboard · responsive · keys · sysmon · pretty ·

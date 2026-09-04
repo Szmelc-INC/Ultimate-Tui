@@ -11,10 +11,14 @@ import (
 	"github.com/silverx/ultimate-tui/internal/engine"
 )
 
+// openF3 now reaches the theme/style picker the new way: F2 opens the control
+// panel, Enter on its first row ("Theme & style") opens the picker.
 func openF3(t *testing.T, m *engine.Model) *engine.Model {
 	t.Helper()
 	_ = m.View()
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	return u.(*engine.Model)
 }
 
@@ -22,7 +26,7 @@ func TestF3MenuTogglesAndKeepsFrameGeometry(t *testing.T) {
 	m := openF3(t, newModel(t, gridSrc, 90, 26))
 	v := m.View()
 	if !strings.Contains(v, "settings — theme & style") {
-		t.Fatalf("F3 did not open the settings menu:\n%s", v)
+		t.Fatalf("F2->Enter did not open the settings menu:\n%s", v)
 	}
 	lines := strings.Split(v, "\n")
 	if len(lines) != 26 {
@@ -33,10 +37,16 @@ func TestF3MenuTogglesAndKeepsFrameGeometry(t *testing.T) {
 			t.Fatalf("settings frame line %d width = %d, want 90", i, lipgloss.Width(ln))
 		}
 	}
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	// Esc backs out to the control panel (one level), Esc again closes it.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(*engine.Model)
-	if strings.Contains(m.View(), "settings — theme & style") {
-		t.Fatal("F3 again did not close the menu")
+	if !strings.Contains(m.View(), "controls — F2") {
+		t.Fatal("Esc from the picker did not return to the control panel")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	if strings.Contains(m.View(), "controls — F2") || strings.Contains(m.View(), "settings — theme & style") {
+		t.Fatal("Esc did not close the control panel")
 	}
 }
 
@@ -77,12 +87,15 @@ func TestF3MenuLivePreviewAndApply(t *testing.T) {
 		t.Fatal("cycling the style column never changed the rendered border")
 	}
 
-	// Enter commits: menu closes and the previewed style stays.
+	// Enter commits: the picker closes (back to the control panel) and the
+	// previewed style stays. A second Esc drops the control panel entirely.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(*engine.Model)
 	if strings.Contains(m.View(), "settings — theme & style") {
-		t.Fatal("Enter did not close the settings menu")
+		t.Fatal("Enter did not close the settings picker")
 	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
 	if strings.Contains(m.View(), "╭") {
 		t.Fatal("committed style reverted to rounded after closing the menu")
 	}
@@ -100,7 +113,9 @@ func TestF3MenuEscRestoresPreOpenTheme(t *testing.T) {
 		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = u.(*engine.Model)
 	}
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // picker -> control (restores theme)
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // control -> closed
 	m = u.(*engine.Model)
 
 	if strings.Contains(m.View(), "settings — theme & style") {

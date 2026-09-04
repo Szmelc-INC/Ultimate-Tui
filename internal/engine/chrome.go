@@ -74,7 +74,7 @@ func (m *Model) helpPanel() string {
 		row("Esc", "release the focus lock"),
 		row("Esc Esc", "send a literal Esc to a locked shell/editor"),
 		row("F1", "toggle this help"),
-		row("F3", "theme & style settings"),
+		row("F2", "controls — global settings & the theme/style picker"),
 		row("Ctrl+C", "NAV: confirm-quit  ·  LOCKED: kill this pane's process"),
 		row(m.mod+"+…", "config keybindings ("+m.mod+" = the modifier key)"),
 		row(m.mod+"+ = / - / 0", "grow / shrink / reset the focused pane"),

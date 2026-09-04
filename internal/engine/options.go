@@ -23,9 +23,10 @@ type Options struct {
 	// Keys are extra global bindings (already "mod+"-expanded or literal),
 	// layered under the TUI config's own keybindings.
 	Keys map[string]string
-	// SaveTheme, when non-nil, persists a theme/style pair chosen in the F3
-	// settings menu. The engine never writes to disk itself — main.go wires
-	// this to the global runner config so tests stay hermetic.
+	// SaveTheme, when non-nil, persists a theme/style pair chosen in the
+	// theme/style picker (opened from the F2 control panel). The engine never
+	// writes to disk itself — main.go wires this to the global runner config
+	// so tests stay hermetic.
 	SaveTheme func(themeName, styleName string) error
 }
 

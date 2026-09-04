@@ -28,7 +28,8 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   mouse hit-test), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
   palettes + stylesets + memoized `theme` (theme.go), status bar (chrome.go),
   overlay enum + F1 help + Ctrl+C confirm dialog + per-pane interrupt
-  (overlay.go), F3 theme/style picker (settings.go),
+  (overlay.go), F2 control panel (control.go), theme/style picker (settings.go),
+  per-pane zoom math `zoomCells`/`shiftZoom` (layout.go),
   `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions` (snapshot.go).
 - `main.go` — CLI: `run`, `validate`, `render`, `config`, `version`, `help`.
   `run`/`render` load the global config via `config.LoadGlobal` →
@@ -56,26 +57,32 @@ persists just theme+style (temp-file + rename, other fields untouched) — wired
 Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
 the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
 indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
-locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings`) = the active
-modal layer; `m.themeMemo` caches the resolved `theme` (`invalidateTheme()` drops
-it — F3 live preview).
+locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings|ovControl`) =
+the active modal layer; `m.overlayReturn` is a one-level back target (F2 control
+panel → picker → Esc/Enter returns to F2). `leaf.zoom` = per-pane size bias in
+steps, folded into every ancestor split by `shiftZoom` (sum-preserving).
+`m.themeMemo` caches the resolved `theme` (`invalidateTheme()` drops it — picker
+live preview).
 
 ## Control flow
 
 - `NewWithOptions(cfg, opts)` (`New` = defaults): key precedence
   `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through `expandMod`
   ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `tab`/`shift+tab`→focus-next/prev,
-  `f1`→help, `f3`→settings. Ctrl+C, arrows, Enter, Esc are handled in code, not
-  the map (Ctrl+C must never be a plain quit binding). `build()` recurses,
+  `f1`→help, `f2`→control, `mod+=`/`mod++`/`mod+-`/`mod+_`/`mod+0`→zoom
+  in/in/out/out/reset (focused pane). Ctrl+C, arrows, Enter, Esc are handled in
+  code, not the map (Ctrl+C must never be a plain quit binding). `build()` recurses,
   instantiating widgets into `m.leaves`.
 - `Update`: `WindowSizeMsg`→store size+`ready`.
   - `KeyMsg` → `handleKey`:
     1. `m.overlay` non-none swallows the key: help → Esc/F1/q/Enter/Space close
        (Ctrl+C → quit-confirm); confirm → y/Y/Enter/Ctrl+C confirm, n/N/Esc
        cancel; settings → `handleSettingsKey` (arrows preview, Enter commits +
-       `opts.SaveTheme`, Esc restores).
-    2. `isGlobalKey` (starts `mod+`, or `f1`/`f3`) → run bound action even when
-       locked. Ctrl+C is deliberately NOT global.
+       `opts.SaveTheme`, Esc restores — both return to `overlayReturn`);
+       control → `handleControlKey` (↑↓ pick, Enter opens the row, Esc closes).
+    2. `isGlobalKey` (starts `mod+`, or `f1`/`f2` — NOT `f3`, which now falls
+       through to the widget) → run bound action even when locked. Ctrl+C is
+       deliberately NOT global.
     3. `ctrl+c` → locked: `lockedInterrupt` (pane has `widget.Interrupter` →
        kill-confirm dialog, else forward the key); unlocked: `openConfirmQuit`.
     4. locked → `esc` releases (raw pane: first `esc` buffers, `esc esc` forwards
@@ -90,9 +97,11 @@ it — F3 live preview).
 - `View`: `bodyDims()` = full size minus 1 row when the status bar shows
   (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp
   `rectW/rectH` to the body size, append `statusBar(w)`, then splice the active
-  overlay (`renderHelp`/`renderConfirm`/`renderSettings`) centered via
-  `overlayCenter` (ANSI-safe, `x/ansi` Truncate + TruncateLeft). `render(n,x,y,w,h)`
-  recurses tracking absolute origin; each leaf stores its rect (`x,y,pw,ph`).
+  overlay (`renderHelp`/`renderConfirm`/`renderSettings`/`renderControl`) centered
+  via `overlayCenter` (ANSI-safe, `x/ansi` Truncate + TruncateLeft).
+  `render(n,x,y,w,h)` recurses tracking absolute origin; each leaf stores its rect
+  (`x,y,pw,ph`). Split nodes: `distribute` then, if any child subtree holds a
+  zoomed leaf, `shiftZoom` rebalances the sizes (total held constant).
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
   row) — when `lf.title != ""` it gets a `ScrollProgress` `NN%` suffix and, if
   focused+locked, a `<bullet> LOCKED` suffix; border + glyphs from the resolved
@@ -167,7 +176,7 @@ per-pane options blob and decode in the factory.
 - A config can remap a key but can't *unbind* a default (same-key remap only).
 - Unlocked, the engine owns arrows/Tab/Enter/Ctrl+C and every bound key; other
   keys fall through to the focused widget. Locked, only `isGlobalKey` (mod+…,
-  F1, F3), `ctrl+c` (→ per-pane interrupt) and `esc` are intercepted —
+  F1, F2 — NOT F3), `ctrl+c` (→ per-pane interrupt) and `esc` are intercepted —
   everything else goes to the widget. A `RawKeyConsumer` pane only receives raw
   keys **while locked**, so the user must press Enter to drive `htop`/`vim`.
   Ctrl+C never quits outright (NAV: confirm dialog; LOCKED: kills that pane's

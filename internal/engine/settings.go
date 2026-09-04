@@ -20,14 +20,21 @@ func (m *Model) openSettings() {
 	m.setRow[1] = indexOf(StyleNames(), m.styleName)
 }
 
+// closeSettings dismisses the picker, returning to whatever overlay opened it
+// (the F2 control panel) or to the bare frame. overlayReturn is one level deep.
+func (m *Model) closeSettings() {
+	m.overlay = m.overlayReturn
+	m.overlayReturn = ovNone
+}
+
 func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "f3", "q":
+	case "esc", "q":
 		m.themeName, m.styleName = m.setSavedTheme, m.setSavedStyle
 		m.invalidateTheme()
-		m.overlay = ovNone
+		m.closeSettings()
 	case "enter":
-		m.overlay = ovNone
+		m.closeSettings()
 		if m.opts.SaveTheme != nil {
 			_ = m.opts.SaveTheme(m.themeName, m.styleName)
 		}
