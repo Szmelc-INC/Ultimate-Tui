@@ -39,6 +39,7 @@ typos surface.
 {
   "name": "system-dashboard",
   "keybindings": { "1": "focus-next" },   // merged over the defaults
+  "prefix": "ctrl+b",                     // leader key for interactive panes
   "layout": { /* a node */ }
 }
 ```
@@ -74,19 +75,40 @@ covered.
 
 ### Widgets
 
-| type      | keys                          | notes |
-|-----------|-------------------------------|-------|
-| `text`    | `content`                     | static text, scrolls if it overflows |
-| `command` | `command`, `shell` (opt)      | runs the command **once**, shows combined stdout+stderr, scrollable |
+| type      | keys                      | notes |
+|-----------|---------------------------|-------|
+| `text`    | `content`                 | static text, scrolls if it overflows |
+| `command` | `command`, `shell` (opt)  | runs the command **once**, shows combined stdout+stderr, scrollable |
+| `shell`   | `command`, `shell` (opt)  | a **real interactive process** on a pty — `htop`, `vim`, `cmatrix`, `$SHELL`. Output goes through a VT emulator; keystrokes are forwarded to the child |
 
-`command` is **not** an interactive terminal — no pty, no `vim`/`htop`. That is a
-separate feature (see roadmap).
+`command` captures text; `shell` *is* a terminal. Pick `shell` when the program
+draws its own screen or needs input.
 
 ### Keys
 
-Defaults: `tab` / `shift+tab` focus next/prev, `q` / `ctrl+c` quit. Per-pane
-keys not bound globally go to the focused widget (`j`/`k`, arrows, `pgup`/`pgdn`,
-`g`/`home` scroll). `keybindings` in the config override defaults by key.
+Defaults: `tab` / `shift+tab` focus next/prev, `q` / `ctrl+c` quit. Scroll keys
+(`j`/`k`, arrows, `pgup`/`pgdn`, `g`) go to the focused widget. `keybindings` in
+the config remap any key to `quit` / `focus-next` / `focus-prev`.
+
+**Interactive (`shell`) panes** take over the keyboard while focused so the child
+program gets everything — including `q` and `ctrl+c`. To reach ultui's own keys,
+press the **prefix** first (`"prefix"` in the config, default `ctrl+b`), tmux
+style:
+
+| keys | effect |
+|------|--------|
+| `<prefix>` then `tab` / `h` / `l` / `q` … | run that key's action |
+| `<prefix>` `<prefix>` | send a literal prefix byte to the child |
+
+The focused interactive pane shows `⌨ PREFIX` in its title while it waits for the
+second key.
+
+### Mouse
+
+On by default. **Click** a pane to focus it; **wheel** scrolls the pane under the
+cursor without moving focus. Mouse events are not yet forwarded *into* `shell`
+children, so `htop`'s own mouse doesn't work — keyboard does. Enabling mouse
+reporting disables the terminal's native text selection while ultui runs.
 
 ## Run modes
 
@@ -114,22 +136,25 @@ Layout:
 
 ```
 internal/config   schema + strict loader (Parse is the only format seam)
-internal/widget   Widget interface + kind registry; text.go, command.go
-internal/engine   layout math, bubbletea model, headless Snapshot
+internal/widget   Widget interface + kind registry; text · command · shell
+                  scrollBox (scroll.go), keyToBytes (keys.go)
+internal/engine   layout math, bubbletea model, prefix + mouse routing,
+                  bounded headless Snapshot
 main.go           run / validate / render CLI
 examples/         hello · dashboard · responsive · keys · sysmon · pretty ·
-                  devdash · compiled/   —  see examples/README.md
+                  devdash · multiplex · compiled/   —  see examples/README.md
 ```
 
 ## Roadmap
 
 Not built yet, roughly in priority order:
 
-- Interactive process panes (pty + ANSI cell grid + key forwarding)
-- Mouse: click-to-focus, drag-resize splits
+- Mouse forwarded *into* `shell` children (SGR sequences to the pty)
+- Drag-resize splits with the mouse
+- Terminal-query responses (DA/CPR) forwarded to `shell` children — blocked on
+  an `x/vt` concurrency limitation
 - Live/streaming and periodic `command` refresh
 - More widgets: `markdown` (glamour), `list`, `viewport`, `input`
 - `ultui compile` — codegen the wrapper + `go build` in one step
 - Shared borders between adjacent panes
 - Public `pkg/` API once it stabilises
-- `LLM.md` covers the same ground compressed for coding agents

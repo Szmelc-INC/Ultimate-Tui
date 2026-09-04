@@ -27,6 +27,26 @@ type Widget interface {
 	View(width, height int) string
 }
 
+// RawKeyConsumer is an optional interface. A widget that returns true wants
+// every key (except the engine's prefix) delivered verbatim while it is
+// focused — an interactive child process, typically. The engine checks this
+// per keypress, so a widget can drop out of raw mode when its process exits.
+type RawKeyConsumer interface {
+	ConsumesRawKeys() bool
+}
+
+// Closer is an optional interface for widgets holding OS resources (a child
+// process, a pty). The engine calls Close on every leaf when the program ends.
+type Closer interface {
+	Close() error
+}
+
+// StreamMsg marks messages emitted by a widget's continuous read loop (see the
+// shell widget). engine.Snapshot uses it to avoid draining an endless stream.
+type StreamMsg interface {
+	stream()
+}
+
 // Factory builds a widget from its pane config.
 type Factory func(*config.Pane) (Widget, error)
 

@@ -44,6 +44,21 @@ func (s *scrollBox) handleKey(msg tea.KeyMsg) bool {
 	return true
 }
 
+// handleMouse consumes wheel events and reports whether it did.
+func (s *scrollBox) handleMouse(msg tea.MouseMsg) bool {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if s.off -= 3; s.off < 0 {
+			s.off = 0
+		}
+		return true
+	case tea.MouseButtonWheelDown:
+		s.off += 3
+		return true
+	}
+	return false
+}
+
 func (s *scrollBox) view(width, height int) string {
 	if width < 1 || height < 1 {
 		return ""

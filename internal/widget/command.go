@@ -68,6 +68,8 @@ func (c *commandWidget) Update(msg tea.Msg) (Widget, tea.Cmd) {
 		}
 	case tea.KeyMsg:
 		c.box.handleKey(m)
+	case tea.MouseMsg:
+		c.box.handleMouse(m)
 	}
 	return c, nil
 }

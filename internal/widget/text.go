@@ -22,8 +22,11 @@ func newText(p *config.Pane) (Widget, error) {
 func (t *textWidget) Init() tea.Cmd { return nil }
 
 func (t *textWidget) Update(msg tea.Msg) (Widget, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		t.box.handleKey(key)
+	switch m := msg.(type) {
+	case tea.KeyMsg:
+		t.box.handleKey(m)
+	case tea.MouseMsg:
+		t.box.handleMouse(m)
 	}
 	return t, nil
 }

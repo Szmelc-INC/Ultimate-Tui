@@ -17,7 +17,13 @@ type Config struct {
 	Name        string            `json:"name"`
 	Version     string            `json:"version,omitempty"`
 	Keybindings map[string]string `json:"keybindings,omitempty"`
-	Layout      Node              `json:"layout"`
+	// Prefix is the tmux-style leader key. While an interactive pane (a
+	// widget that consumes raw keys, e.g. "shell") is focused, only this key
+	// is caught by the engine; the next key after it is looked up as an
+	// action. Press it twice to send a literal prefix byte to the child.
+	// Default: "ctrl+b".
+	Prefix string `json:"prefix,omitempty"`
+	Layout Node   `json:"layout"`
 }
 
 // Node is a layout tree node: either a split (Direction + Children) or a leaf

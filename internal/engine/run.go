@@ -14,9 +14,9 @@ func Run(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	// No WithMouseCellMotion yet: enabling mouse reporting breaks terminal
-	// text selection, and nothing consumes tea.MouseMsg until click-to-focus
-	// lands. Turn it on together with that feature.
-	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	// Mouse reporting: click focuses a pane, wheel scrolls it. This does trade
+	// away the terminal's native text selection while ultui runs.
+	_, err = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	m.Close() // kill any child processes / release ptys
 	return err
 }

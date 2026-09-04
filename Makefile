@@ -2,13 +2,16 @@ BINARY := ultui
 PKG    := ./...
 EXAMPLE ?= examples/dashboard.json
 
-.PHONY: build test test-one vet fmt tidy run validate render compiled clean
+.PHONY: build test race test-one vet fmt tidy run validate render compiled clean
 
 build: ## compile the ultui runtime into bin/
 	go build -o bin/$(BINARY) .
 
 test: ## run the whole test suite
 	go test $(PKG)
+
+race: ## run the suite under the race detector (shell widget uses goroutines)
+	go test -race $(PKG)
 
 ## run a single test: make test-one T=TestFocusTraversalWraps
 test-one:

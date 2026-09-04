@@ -1,0 +1,58 @@
+{
+  "name": "multiplex",
+  "version": "0.1.0",
+  "prefix": "ctrl+b",
+  "keybindings": {
+    "l": "focus-next",
+    "h": "focus-prev"
+  },
+  "layout": {
+    "direction": "column",
+    "children": [
+      {
+        "size": "1",
+        "pane": {
+          "type": "text",
+          "border": false,
+          "content": "  multiplex   —   click a pane to focus it · wheel scrolls · in an interactive pane press  ctrl+b  then a nav key ( h / l / q )"
+        }
+      },
+      {
+        "size": "*",
+        "direction": "row",
+        "children": [
+          {
+            "size": "58%",
+            "pane": {
+              "type": "shell",
+              "title": " htop",
+              "command": "htop || top"
+            }
+          },
+          {
+            "size": "*",
+            "direction": "column",
+            "children": [
+              {
+                "size": "55%",
+                "pane": {
+                  "type": "shell",
+                  "title": " shell  (type in me)",
+                  "command": "exec $SHELL -i"
+                }
+              },
+              {
+                "size": "*",
+                "pane": {
+                  "type": "shell",
+                  "title": " cmatrix",
+                  "command": "cmatrix -b -u 4 || while true; do head -c 200 /dev/urandom | tr -dc 'A-Za-z0-9'; echo; sleep 0.1; done"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
