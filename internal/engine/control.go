@@ -24,6 +24,10 @@ func (m *Model) controlItems() []controlItem {
 			m.overlayReturn = ovControl
 			m.openSettings()
 		}},
+		{"Edit config", func(m *Model) {
+			m.overlayReturn = ovControl
+			m.openConfigEditor()
+		}},
 	}
 }
 

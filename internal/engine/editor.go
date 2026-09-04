@@ -26,6 +26,13 @@ const (
 	fSlider                  // integer in [min,max] by step
 )
 
+type editScope int
+
+const (
+	edScopePane   editScope = iota // one pane, opened from the context menu
+	edScopeConfig                  // the whole config, opened from F2
+)
+
 type edField struct {
 	key            string
 	label          string
@@ -48,11 +55,40 @@ type editBuf struct {
 var mdStyleChoices = []string{"", "dark", "light", "dracula", "tokyo-night", "pink", "ascii", "notty"}
 var sizeModeChoices = []string{"auto", "percent", "fixed", "flex"}
 
-func (m *Model) editorTabs() []string { return []string{"General", "Layout", "Widget"} }
+func (m *Model) editorTabs() []string {
+	if m.edScope == edScopeConfig {
+		return []string{"Config", "General", "Layout", "Widget"}
+	}
+	return []string{"General", "Layout", "Widget"}
+}
+
+// edLogicalTab maps the visible tab index to a scope-independent one:
+// -1 = the config tab (only present in whole-config scope), 0/1/2 =
+// General/Layout/Widget.
+func (m *Model) edLogicalTab() int {
+	if m.edScope == edScopeConfig {
+		return m.edTab - 1
+	}
+	return m.edTab
+}
+
+func (m *Model) leafNames() []string {
+	out := make([]string, len(m.leaves))
+	for i := range m.leaves {
+		out[i] = m.leafName(i)
+	}
+	return out
+}
 
 // editorFields is the field list for the current tab, given the buffered type.
 func (m *Model) editorFields() []edField {
-	switch m.edTab {
+	if m.edLogicalTab() == -1 { // Config tab
+		return []edField{
+			{key: "cfg.name", label: "name", kind: fText},
+			{key: "cfg.pane", label: "pane", kind: fSelect, choices: m.leafNames()},
+		}
+	}
+	switch m.edLogicalTab() {
 	case 0: // General
 		return []edField{
 			{key: "type", label: "type", kind: fSelect, choices: widget.Kinds()},
@@ -93,14 +129,15 @@ func (m *Model) editorFields() []edField {
 	}
 }
 
-func (m *Model) openPaneEditor(idx int) {
+// loadPane refills the scratch buffer from leaf idx and points the editor at
+// it. Shared by both entry points and by the whole-config pane selector.
+func (m *Model) loadPane(idx int) {
 	if idx < 0 || idx >= len(m.leaves) {
 		return
 	}
 	lf := m.leaves[idx]
-	m.overlay = ovEditor
 	m.ctxLeaf = idx
-	m.edTab, m.edRow, m.edErr, m.edDirty = 0, 0, "", false
+	m.edErr = ""
 
 	p := lf.pane
 	mode, val := parseSizeStr("")
@@ -120,6 +157,27 @@ func (m *Model) openPaneEditor(idx int) {
 		sizeVal:  val,
 		hasSize:  lf.parent != nil,
 	}
+}
+
+// openPaneEditor edits a single pane, reached from the context menu's Edit row.
+func (m *Model) openPaneEditor(idx int) {
+	if idx < 0 || idx >= len(m.leaves) {
+		return
+	}
+	m.overlay = ovEditor
+	m.edScope = edScopePane
+	m.edTab, m.edRow, m.edDirty = 0, 0, false
+	m.loadPane(idx)
+}
+
+// openConfigEditor edits the whole config, reached from the F2 control panel.
+// Same controls; a leading "Config" tab carries the top-level name and a pane
+// selector that walks every leaf.
+func (m *Model) openConfigEditor() {
+	m.overlay = ovEditor
+	m.edScope = edScopeConfig
+	m.edTab, m.edRow, m.edDirty = 0, 0, false
+	m.loadPane(0)
 }
 
 func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -160,23 +218,25 @@ func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "left":
 		if f.kind != fText {
-			m.editCycle(f, -1)
+			return m, m.editCycle(f, -1)
 		}
 		return m, nil
 	case "right":
 		if f.kind != fText {
-			m.editCycle(f, +1)
+			return m, m.editCycle(f, +1)
 		}
 		return m, nil
 	case "enter":
 		if f.kind == fText {
 			return m, nil // no multiline editing here
 		}
+		if f.kind == fSelect && f.key == "cfg.pane" {
+			return m, m.editCycle(f, +1)
+		}
 		return m, m.applyEdit()
 	case " ":
 		if f.kind == fBool {
-			m.editCycle(f, 1)
-			return m, nil
+			return m, m.editCycle(f, 1)
 		}
 	}
 	if f.kind == fText {
@@ -208,6 +268,10 @@ func (m *Model) editGet(f edField) string {
 		return m.eb.sizeMode
 	case "size.value":
 		return strconv.Itoa(m.eb.sizeVal)
+	case "cfg.name":
+		return m.cfg.Name
+	case "cfg.pane":
+		return m.leafName(m.ctxLeaf)
 	}
 	return ""
 }
@@ -224,8 +288,11 @@ func (m *Model) editSetText(key, s string) {
 		m.eb.command = s
 	case "shell":
 		m.eb.shell = s
+	case "cfg.name":
+		m.cfg.Name = s // top-level; committed to the live config immediately
 	}
 	m.edDirty = true
+	m.edConfigDirty = true
 }
 
 func (m *Model) editText(f edField, msg tea.KeyMsg) {
@@ -245,12 +312,26 @@ func (m *Model) editText(f edField, msg tea.KeyMsg) {
 	}
 }
 
-// editCycle changes a select / bool / slider field by dir (-1 or +1).
-func (m *Model) editCycle(f edField, dir int) {
+// editCycle changes a select / bool / slider field by dir (-1 or +1). It
+// returns a command only for the whole-config pane selector, which commits the
+// pane being left (and can refuse to switch if that pane no longer builds).
+func (m *Model) editCycle(f edField, dir int) tea.Cmd {
+	if f.key == "cfg.pane" {
+		if len(m.leaves) < 2 {
+			return nil
+		}
+		next := (m.ctxLeaf + dir + len(m.leaves)) % len(m.leaves)
+		cmd := m.applyEdit()
+		if m.edErr != "" {
+			return nil // stay put; the current pane won't build
+		}
+		m.loadPane(next)
+		return cmd
+	}
 	switch f.kind {
 	case fSelect:
 		if len(f.choices) == 0 {
-			return
+			return nil
 		}
 		i := (indexOf(f.choices, m.editGet(f)) + dir + len(f.choices)) % len(f.choices)
 		v := f.choices[i]
@@ -282,6 +363,8 @@ func (m *Model) editCycle(f edField, dir int) {
 		m.eb.sizeVal = clampInt(m.eb.sizeVal+dir*f.step, f.min, f.max)
 	}
 	m.edDirty = true
+	m.edConfigDirty = true
+	return nil
 }
 
 // applyEdit commits the buffer to the live config and, if a widget-affecting
@@ -322,6 +405,13 @@ func (m *Model) applyEdit() tea.Cmd {
 		newW = w
 	}
 
+	oldBorder := lf.pane.Border == nil || *lf.pane.Border
+	sizeChanged := lf.parent != nil && lf.parent.Size != composeSize(eb.sizeMode, eb.sizeVal)
+	chromeChanged := lf.pane.Title != cand.Title || oldBorder != eb.border
+	if rebuild || sizeChanged || chromeChanged {
+		m.edConfigDirty = true
+	}
+
 	*lf.pane = cand
 	lf.title = cand.Title
 	lf.border = eb.border
@@ -350,7 +440,11 @@ func (m *Model) editorPanel() string {
 	th := m.theme()
 	var b strings.Builder
 
-	b.WriteString(th.helpTitle.Render("edit · " + m.leafName(m.ctxLeaf)))
+	title := "edit · " + m.leafName(m.ctxLeaf)
+	if m.edScope == edScopeConfig {
+		title = "edit config · " + m.cfg.Name
+	}
+	b.WriteString(th.helpTitle.Render(title))
 	b.WriteString("\n")
 
 	// tab navbar — always visible

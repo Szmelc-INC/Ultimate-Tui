@@ -84,6 +84,47 @@ func TestEditorRejectsUnbuildablePane(t *testing.T) {
 	}
 }
 
+func TestConfigEditorFromF2(t *testing.T) {
+	m := newModel(t, ctxSrc, 100, 30)
+	_ = m.View()
+
+	// F2 -> "Edit config" (second row) -> Enter.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(*engine.Model)
+
+	v := m.View()
+	for _, want := range []string{"edit config · ctx", "Config", "General", "Widget", "name", "pane"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("config editor missing %q:\n%s", want, v)
+		}
+	}
+
+	// Config tab, "pane" row: cycle to the next pane.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // row 0 (name) -> row 1 (pane)
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "Build") {
+		t.Fatalf("pane selector did not advance to the second pane:\n%s", m.View())
+	}
+
+	// Esc backs out to the control panel, then closes it.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "controls — F2") {
+		t.Fatal("Esc from the config editor did not return to F2")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	if strings.Contains(m.View(), "controls — F2") {
+		t.Fatal("second Esc did not close the control panel")
+	}
+}
+
 func TestEditorTabNavigation(t *testing.T) {
 	m := newModel(t, ctxSrc, 100, 30)
 	m = openEditor(t, m)
