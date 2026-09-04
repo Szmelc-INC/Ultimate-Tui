@@ -27,12 +27,12 @@ make compiled                           # build the go:embed static demo (exampl
 | path | role |
 |------|------|
 | `internal/config` | schema structs; `Parse([]byte)` / `Load(path)`. Strict JSON. **The only format-aware code** — a second format (YAML/TOML) is a decoder swap here and nowhere else. `global.go` = `GlobalConfig` + `LoadGlobal()` for the runner-wide config. |
-| `internal/widget` | `Widget` interface + `Register`/`New` kind registry (self-register in `init()`). Kinds: `text`, `markdown` (glamour), `command`, `shell`. Shared `scrollBox` in `scroll.go`; `keyToBytes` (xterm key encoding) in `keys.go`. Optional interfaces: `RawKeyConsumer`, `Closer`, `StreamMsg`. |
+| `internal/widget` | `Widget` interface + `Register`/`New` kind registry (self-register in `init()`). Kinds: `text`, `markdown` (glamour), `command`, `shell`. Shared `scrollBox` (bubbles/viewport-backed) in `scroll.go`; `keyToBytes` (xterm key encoding) in `keys.go`. Optional interfaces: `RawKeyConsumer`, `Closer`, `StreamMsg`, `ScrollProgress` (→ `NN%` in the pane title). |
 | `internal/engine` | `parseSize`/`distribute` layout math (`layout.go`), bubbletea root `Model` + focus-lock state machine + directional focus + mouse hit-testing (`engine.go`), runner `Options` (`options.go`), adaptive-colour `theme` (`theme.go`), status bar + F1 help overlay (`chrome.go`), `Run`/`RunWithOptions` TTY entry (`run.go`), headless bounded `Snapshot`/`SnapshotWithOptions` (`snapshot.go`). `engine.New/Run/Snapshot` stay pure — the global config is read only in `main.go`. |
 | `main.go` | `run` / `validate` / `render` / `config` CLI. |
 | `examples/` | `hello`, `dashboard`, `responsive`, `keys`, `sysmon`, `pretty`, `devdash`, `multiplex`, `guide` (markdown widget) + `compiled/` (go:embed wrapper); `examples/README.md` maps each to what it demonstrates and a render size. |
 
-Deps: `bubbletea`, `lipgloss` (UI); `glamour` (`markdown` widget — pulls `chroma` for code highlighting); `charmbracelet/x/ansi` (ANSI-safe help-overlay splice); `creack/pty` + `charmbracelet/x/vt` (interactive `shell` panes — pty + VT emulator).
+Deps: `bubbletea`, `lipgloss` (UI); `bubbles` (`viewport` behind `scrollBox`); `glamour` (`markdown` widget — pulls `chroma` for code highlighting); `charmbracelet/x/ansi` (ANSI-safe help-overlay splice); `creack/pty` + `charmbracelet/x/vt` (interactive `shell` panes — pty + VT emulator).
 
 Import direction: `engine` → `widget` → `config` → (nothing). Keep it acyclic.
 
@@ -70,7 +70,7 @@ Cross-cutting requirements: full keyboard + mouse interactivity; unicode/ascii/a
 
 `DESIGN.md` recommends (does not mandate) the Charm ecosystem — integrate all, some, or none: `bubbletea` (runtime/event loop), `lipgloss` (styling/layout), `bubbles` (widgets), `huh` (forms), `glamour`/`glow` (markdown), `gum`, `vhs`. Reference points for behavior: tmux, midnight commander, lazygit/lazyvim, archinstall, and CLI agent harnesses.
 
-Actually imported today: `bubbletea` + `lipgloss` + `charmbracelet/x/{ansi,vt}` + `creack/pty` + `glamour` (see `go.mod`). `glamour` is pulled by the `markdown` widget only — it lives in `internal/widget` behind the registry, not in the engine. `bubbles`/`huh` are *not* wired in; a `list`/`input`/`form` widget would be the first to pull one, same rule: widget file, not engine.
+Actually imported today: `bubbletea` + `lipgloss` + `bubbles` (`viewport`) + `charmbracelet/x/{ansi,vt}` + `creack/pty` + `glamour` (see `go.mod`). `glamour` is pulled by the `markdown` widget only; `bubbles/viewport` backs the shared `scrollBox`. Both live behind the widget layer, not in the engine. `huh` (forms) is *not* wired in; a `form`/`input`/`list` widget would be the first to pull it — same rule: widget file, not engine.
 
 ## Documentation deliverables
 

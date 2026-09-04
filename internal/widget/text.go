@@ -34,3 +34,5 @@ func (t *textWidget) Update(msg tea.Msg) (Widget, tea.Cmd) {
 func (t *textWidget) View(width, height int) string {
 	return t.box.view(width, height)
 }
+
+func (t *textWidget) ScrollFraction() float64 { return t.box.scrollFraction() }

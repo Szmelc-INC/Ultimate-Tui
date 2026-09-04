@@ -1,8 +1,8 @@
 # LLM.md — ULTIMATE TUI, compressed for coding agents
 
 Status: MVP. Go module `github.com/silverx/ultimate-tui`, Go 1.26. Direct deps:
-bubbletea, lipgloss, creack/pty, charmbracelet/x/{vt,ansi}. No plugin system by
-design.
+bubbletea, lipgloss, bubbles (viewport), glamour, creack/pty,
+charmbracelet/x/{vt,ansi}. No plugin system by design.
 
 ## Package map
 
@@ -14,10 +14,13 @@ design.
 - `internal/widget` — `Widget` interface, `Register(kind, Factory)` /
   `New(*config.Pane)` registry. Kinds self-register in `init()`: `text`,
   `markdown` (glamour, markdown.go), `command`, `shell`. `scrollBox` (scroll.go)
-  = shared scroll/wrap/wheel.
+  = shared scroll/wrap/wheel, backed by `bubbles/viewport` (it truncates lines
+  to width in `View`, so exact-size is safe); `g`/`home` → top, `G`/`end` →
+  bottom, everything else delegates to the viewport KeyMap.
   `keyToBytes` (keys.go) = tea.KeyMsg → xterm bytes. Optional ifaces:
   `RawKeyConsumer` (want every key), `Closer` (owns OS resources), `StreamMsg`
-  (endless read-loop msg marker).
+  (endless read-loop msg marker), `ScrollProgress` (`ScrollFraction() float64`
+  0..1 → engine appends `NN%` to the pane title when > 0).
 - `internal/engine` — `sizeSpec`/`parseSize`/`distribute` (layout.go), `Model`
   (bubbletea root, engine.go: focus-lock state machine + directional focus +
   mouse hit-test), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
@@ -76,7 +79,9 @@ locked raw pane; `m.helpOpen` = F1 overlay.
   + TruncateLeft). `render(n,x,y,w,h)` recurses tracking absolute origin; each
   leaf stores its rect (`x,y,pw,ph`).
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
-  row). Body = `widget.View(innerW, bodyH)`. Wrap in
+  row) — when `lf.title != ""` it gets a `ScrollProgress` `NN%` suffix and, if
+  focused+locked, a `● LOCKED` suffix; rounded border, colour by focus/lock
+  state (`theme.go`). Body = `widget.View(innerW, bodyH)`. Wrap in
   `lipgloss.NewStyle().Width(innerW).Height(innerH)` + border.
   **Do NOT add `MaxWidth/MaxHeight` on the bordered style** — lipgloss clips the
   final output incl. border and shears the bottom/right edge. lipgloss
@@ -91,11 +96,13 @@ View(width, height int) string   // must return exactly width x height
 ```
 
 `markdown` widget (markdown.go): source = `Content` or `os.ReadFile(File)`.
+source read in `newMarkdown` (`Content`, or `os.ReadFile(File)` — so a bad `file`
+path fails `engine.New`/`validate`, and a relative path needs the right cwd).
 `View(w,h)` lazily `glamour.NewTermRenderer(WithStandardStyle(style),
-WithWordWrap(w))` — style pinned (`MarkdownStyle`, default "dark") so `render`
+WithWordWrap(w))` — style pinned (`MarkdownStyle`; ""/"auto" → "dark") so `render`
 output is deterministic — caches the rendered lines per width, scrolls them as
-opaque ANSI lines (no re-wrap), and forces exact w×h via `normalizeGrid` (shared
-with shell.go). `Init` is nil; not a `RawKeyConsumer`.
+opaque ANSI lines (no re-wrap), forces exact w×h via `normalizeGrid` (shared with
+shell.go), and implements `ScrollProgress`. `Init` is nil; not a `RawKeyConsumer`.
 
 `command` widget: `Init` returns a `tea.Cmd` running `exec.Command(shell,"-c",
 cmd).CombinedOutput()`, returns `cmdDoneMsg{id, output}`. Each instance has an

@@ -13,7 +13,7 @@
         "pane": {
           "type": "text",
           "title": "nav",
-          "content": "ULTIMATE TUI\n\n- overview\n- processes\n- disk\n- kernel\n\ntab: cycle panes\nq:   quit"
+          "content": "ULTIMATE TUI\n\n- overview\n- processes\n- disk\n- kernel\n\narrows / tab  focus\nenter / esc   lock / release\nF1           help\nalt+q        quit"
         }
       },
       {

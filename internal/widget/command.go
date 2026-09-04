@@ -78,6 +78,8 @@ func (c *commandWidget) View(width, height int) string {
 	return c.box.view(width, height)
 }
 
+func (c *commandWidget) ScrollFraction() float64 { return c.box.scrollFraction() }
+
 func defaultShell() string {
 	if s := os.Getenv("SHELL"); s != "" {
 		return s

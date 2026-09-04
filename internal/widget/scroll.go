@@ -1,86 +1,87 @@
 package widget
 
 import (
-	"strings"
-
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// scrollBox is a minimal vertically-scrollable text body shared by widgets that
-// display static or captured text. It wraps to the render width and shows a
-// height-sized window into the content.
+// scrollBox is a vertically-scrollable text body shared by widgets that display
+// static or captured text. It wraps content to the render width and shows a
+// height-sized window into it, backed by bubbles/viewport for scroll physics
+// and a scroll-position fraction.
 type scrollBox struct {
-	raw string
-	off int
+	vp     viewport.Model
+	raw    string
+	inited bool
+	wrapW  int // width the current viewport content was wrapped at
 }
 
 func (s *scrollBox) setText(text string) {
 	s.raw = text
-	s.off = 0
+	s.wrapW = 0 // force a re-wrap + SetContent on the next view()
+	if s.inited {
+		s.vp.SetYOffset(0)
+	}
 }
 
-// handleKey consumes navigation keys and reports whether it did.
+func (s *scrollBox) ensure(width, height int) {
+	if !s.inited {
+		s.vp = viewport.New(width, height)
+		s.vp.MouseWheelEnabled = true
+		s.inited = true
+	}
+	if s.vp.Width != width || s.vp.Height != height {
+		s.vp.Width, s.vp.Height = width, height
+		s.wrapW = 0
+	}
+	if s.wrapW != width {
+		s.vp.SetContent(lipgloss.NewStyle().Width(width).Render(s.raw))
+		s.wrapW = width
+	}
+}
+
+// handleKey consumes navigation keys and reports whether the offset moved.
 func (s *scrollBox) handleKey(msg tea.KeyMsg) bool {
-	switch msg.String() {
-	case "up", "k":
-		if s.off > 0 {
-			s.off--
-		}
-	case "down", "j":
-		s.off++
-	case "pgup", "b":
-		s.off -= 10
-		if s.off < 0 {
-			s.off = 0
-		}
-	case "pgdown", "f", " ":
-		s.off += 10
-	case "home", "g":
-		s.off = 0
-	default:
+	if !s.inited {
 		return false
 	}
-	return true
-}
-
-// handleMouse consumes wheel events and reports whether it did.
-func (s *scrollBox) handleMouse(msg tea.MouseMsg) bool {
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		if s.off -= 3; s.off < 0 {
-			s.off = 0
-		}
+	switch msg.String() {
+	case "g", "home":
+		s.vp.GotoTop()
 		return true
-	case tea.MouseButtonWheelDown:
-		s.off += 3
+	case "G", "end":
+		s.vp.GotoBottom()
 		return true
 	}
-	return false
+	before := s.vp.YOffset
+	s.vp, _ = s.vp.Update(msg)
+	return s.vp.YOffset != before
+}
+
+// handleMouse consumes wheel events and reports whether the offset moved.
+func (s *scrollBox) handleMouse(msg tea.MouseMsg) bool {
+	if !s.inited {
+		return false
+	}
+	before := s.vp.YOffset
+	s.vp, _ = s.vp.Update(msg)
+	return s.vp.YOffset != before
 }
 
 func (s *scrollBox) view(width, height int) string {
 	if width < 1 || height < 1 {
 		return ""
 	}
-	wrapped := lipgloss.NewStyle().Width(width).Render(s.raw)
-	lines := strings.Split(wrapped, "\n")
+	s.ensure(width, height)
+	return s.vp.View()
+}
 
-	maxOff := len(lines) - height
-	if maxOff < 0 {
-		maxOff = 0
+// scrollFraction is 0..1 — how far down the content is scrolled, or 0 when it
+// all fits. Feeds the pane-title position indicator.
+func (s *scrollBox) scrollFraction() float64 {
+	if !s.inited || s.vp.TotalLineCount() <= s.vp.Height {
+		return 0
 	}
-	if s.off > maxOff {
-		s.off = maxOff
-	}
-
-	end := s.off + height
-	if end > len(lines) {
-		end = len(lines)
-	}
-	window := append([]string(nil), lines[s.off:end]...)
-	for len(window) < height {
-		window = append(window, "")
-	}
-	return strings.Join(window, "\n")
+	return s.vp.ScrollPercent()
 }

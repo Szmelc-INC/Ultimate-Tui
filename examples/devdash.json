@@ -2,10 +2,10 @@
   "name": "devdash",
   "version": "0.1.0",
   "keybindings": {
-    "l": "focus-next",
-    "h": "focus-prev",
-    "J": "focus-next",
-    "K": "focus-prev"
+    "mod+l": "focus-next",
+    "mod+h": "focus-prev",
+    "mod+j": "focus-next",
+    "mod+k": "focus-prev"
   },
   "layout": {
     "direction": "row",

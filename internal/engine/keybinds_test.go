@@ -118,6 +118,24 @@ func TestF1HelpOverlayToggles(t *testing.T) {
 	}
 }
 
+func TestF1HelpOverlayGeometryAtNarrowSize(t *testing.T) {
+	// The help panel is wider than the frame here — overlayCenter must clamp,
+	// not panic, and must preserve the exact frame geometry.
+	m := newModel(t, gridSrc, 40, 12)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF1})
+	m = u.(*engine.Model)
+	v := m.View()
+	lines := strings.Split(v, "\n")
+	if len(lines) != 12 {
+		t.Fatalf("narrow help frame height = %d, want 12", len(lines))
+	}
+	for i, ln := range lines {
+		if w := lipgloss.Width(ln); w != 40 {
+			t.Fatalf("narrow help frame line %d width = %d, want 40", i, w)
+		}
+	}
+}
+
 func TestStatusBarPresentAndSized(t *testing.T) {
 	m := newModel(t, gridSrc, 100, 20)
 	v := m.View()

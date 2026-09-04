@@ -503,6 +503,13 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	bodyH := innerH
 	var head string
 	title := lf.title
+	if lf.title != "" {
+		if sp, ok := lf.w.(widget.ScrollProgress); ok {
+			if f := sp.ScrollFraction(); f > 0 {
+				title = strings.TrimSpace(title) + fmt.Sprintf("  %.0f%%", f*100)
+			}
+		}
+	}
 	if focused && m.locked {
 		title = strings.TrimSpace(title + "  ● LOCKED")
 	}

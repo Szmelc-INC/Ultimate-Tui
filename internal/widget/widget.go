@@ -47,6 +47,13 @@ type StreamMsg interface {
 	stream()
 }
 
+// ScrollProgress is an optional interface. A widget that reports how far its
+// content is scrolled (0..1, and 0 when nothing overflows) gets a compact
+// "NN%" indicator appended to its pane title.
+type ScrollProgress interface {
+	ScrollFraction() float64
+}
+
 // Factory builds a widget from its pane config.
 type Factory func(*config.Pane) (Widget, error)
 

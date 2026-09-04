@@ -1,7 +1,7 @@
 {
   "name": "pretty-print",
   "version": "0.1.0",
-  "keybindings": { "l": "focus-next", "h": "focus-prev" },
+  "keybindings": { "mod+l": "focus-next", "mod+h": "focus-prev" },
   "layout": {
     "direction": "column",
     "children": [

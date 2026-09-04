@@ -145,6 +145,30 @@ func TestFocusLockGuardsInteractivePane(t *testing.T) {
 	if !isQuit(cmd) {
 		t.Fatal("mod+q did not quit from inside a locked pane")
 	}
+
+	// Esc on a locked raw pane buffers (Esc-Esc = literal Esc to the child), so
+	// a single Esc must NOT release.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	if !m.Locked() {
+		t.Fatal("first Esc released a locked shell pane; it should buffer")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	if !m.Locked() {
+		t.Fatal("Esc-Esc released the lock; it should forward a literal Esc and stay locked")
+	}
+	// A non-Esc key after a lone buffered Esc releases and is re-handled.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = u.(*engine.Model)
+	if m.Locked() {
+		t.Fatal("Esc then arrow did not release the lock")
+	}
+	if m.Focused() != "note" {
+		t.Fatalf("Esc then Right did not re-handle as nav; at %q", m.Focused())
+	}
 }
 
 func isQuit(cmd tea.Cmd) bool {

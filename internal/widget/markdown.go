@@ -25,6 +25,7 @@ type markdownWidget struct {
 	style string
 
 	off    int
+	maxOff int
 	cacheW int
 	lines  []string
 	rerr   error
@@ -42,9 +43,12 @@ func newMarkdown(p *config.Pane) (Widget, error) {
 	if strings.TrimSpace(src) == "" {
 		return nil, fmt.Errorf("markdown widget: needs \"content\" or \"file\"")
 	}
+	// Pin the style so `ultui render` is byte-for-byte reproducible. "" and the
+	// background-detecting "auto" both collapse to "dark"; any other value is
+	// passed to glamour verbatim (a standard style name or a style-JSON path).
 	style := p.MarkdownStyle
-	if style == "" {
-		style = "dark" // pinned: keeps `ultui render` output deterministic
+	if style == "" || style == "auto" {
+		style = "dark"
 	}
 	return &markdownWidget{src: src, style: style, cacheW: -1}, nil
 }
@@ -119,6 +123,7 @@ func (w *markdownWidget) View(width, height int) string {
 	if maxOff < 0 {
 		maxOff = 0
 	}
+	w.maxOff = maxOff
 	if w.off > maxOff {
 		w.off = maxOff
 	}
@@ -128,4 +133,11 @@ func (w *markdownWidget) View(width, height int) string {
 	}
 	window := strings.Join(w.lines[w.off:end], "\n")
 	return normalizeGrid(window, width, height)
+}
+
+func (w *markdownWidget) ScrollFraction() float64 {
+	if w.maxOff <= 0 {
+		return 0
+	}
+	return float64(w.off) / float64(w.maxOff)
 }

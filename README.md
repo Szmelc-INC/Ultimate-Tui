@@ -81,13 +81,16 @@ covered.
 | type      | keys                      | notes |
 |-----------|---------------------------|-------|
 | `text`    | `content`                 | static text, scrolls if it overflows |
-| `markdown`| `content` or `file`, `markdownStyle` (opt) | renders Markdown with **glamour** — headings, tables, blockquotes, syntax-highlighted code. Lock the pane to scroll. `markdownStyle`: `dark` (default) · `light` · `dracula` · `tokyo-night` · `pink` · `ascii` · `notty` |
+| `markdown`| `content` or `file`, `markdownStyle` (opt) | renders Markdown with **glamour** — headings, tables, blockquotes, syntax-highlighted code. Lock the pane to scroll. `markdownStyle`: `dark` (default, also what `auto`/`""` resolve to) · `light` · `dracula` · `tokyo-night` · `pink` · `ascii` · `notty`. A relative `file` is resolved against ultui's working directory, and `validate` fails if it is missing. |
 | `command` | `command`, `shell` (opt)  | runs the command **once**, shows combined stdout+stderr, scrollable |
 | `shell`   | `command`, `shell` (opt)  | a **real interactive process** on a pty — `htop`, `vim`, `cmatrix`, `$SHELL`. Output goes through a VT emulator; keystrokes are forwarded to the child |
 
 `command` captures text; `shell` *is* a terminal. Pick `shell` when the program
 draws its own screen or needs input. `markdown` is for documents — help pages,
 READMEs, changelogs — rendered in place.
+
+`text`, `command` and `markdown` panes scroll (backed by **bubbles/viewport**)
+and show a `NN%` position marker in their title once the content overflows.
 
 ### Keys
 
@@ -155,7 +158,8 @@ Layout:
 internal/config   schema + strict loader (Parse is the only format seam);
                   global runner config (global.go)
 internal/widget   Widget interface + kind registry; text · markdown · command ·
-                  shell — scrollBox (scroll.go), keyToBytes (keys.go)
+                  shell — scrollBox = bubbles/viewport (scroll.go),
+                  keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
                   theme + status bar + F1 help (theme.go, chrome.go),
                   bounded headless Snapshot
@@ -173,7 +177,7 @@ Not built yet, roughly in priority order:
 - Terminal-query responses (DA/CPR) forwarded to `shell` children — blocked on
   an `x/vt` concurrency limitation
 - Live/streaming and periodic `command` refresh
-- More widgets: `list`, `input` / `form` (huh), `viewport`, `table`
+- More widgets: `list`, `input` / `form` (huh — the next Charm dep a widget will pull), `table`
 - `ultui compile` — codegen the wrapper + `go build` in one step
 - Shared borders between adjacent panes
 - Public `pkg/` API once it stabilises
