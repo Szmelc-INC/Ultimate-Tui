@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-MVP built. Go module `github.com/silverx/ultimate-tui` (Go 1.26). A config renders end to end: recursive row/column splits; `text`, `command`, and interactive `shell` (pty) widgets; focus ring; borders; keybindings with a tmux-style prefix; mouse (click-to-focus, wheel-scroll); three run modes (runtime / headless / go:embed-static). `DESIGN.md` is the vision; `README.md` and `LLM.md` document what actually exists; `optimal-mode.md` is a token-budget ruleset.
+MVP built. Go module `github.com/silverx/ultimate-tui` (Go 1.26). A config renders end to end: recursive row/column splits; `text`, `command`, and interactive `shell` (pty) widgets; focus ring; rounded borders + adaptive-colour theme; a **NAV/LOCKED** focus model (arrows = directional focus, Enter locks a pane, Esc releases, `Esc Esc` = literal Esc to a child); `mod+`-prefixed global keybindings (`mod` = Alt by default); an F1 help popup; a bottom status bar; a **global runner config** at `~/.config/ultui/config.json` (`ultui config` to inspect); mouse (click-to-focus, wheel-scroll); three run modes (runtime / headless / go:embed-static). `DESIGN.md` is the vision; `README.md` and `LLM.md` document what actually exists; `optimal-mode.md` is a token-budget ruleset.
 
 ## Commands
 
@@ -16,6 +16,7 @@ make vet ; make fmt
 ./bin/ultui run examples/dashboard.json      # live TUI (needs a TTY)
 ./bin/ultui render examples/hello.json 100x30 # print ONE frame to stdout — how to verify rendering headless
 ./bin/ultui validate examples/dashboard.json
+./bin/ultui config                          # resolved global-config path + effective mod/statusbar/theme
 make compiled                           # build the go:embed static demo (examples/compiled/)
 ```
 
@@ -25,13 +26,13 @@ make compiled                           # build the go:embed static demo (exampl
 
 | path | role |
 |------|------|
-| `internal/config` | schema structs; `Parse([]byte)` / `Load(path)`. Strict JSON. **The only format-aware code** — a second format (YAML/TOML) is a decoder swap here and nowhere else. |
+| `internal/config` | schema structs; `Parse([]byte)` / `Load(path)`. Strict JSON. **The only format-aware code** — a second format (YAML/TOML) is a decoder swap here and nowhere else. `global.go` = `GlobalConfig` + `LoadGlobal()` for the runner-wide config. |
 | `internal/widget` | `Widget` interface + `Register`/`New` kind registry (self-register in `init()`). Kinds: `text`, `command`, `shell`. Shared `scrollBox` in `scroll.go`; `keyToBytes` (xterm key encoding) in `keys.go`. Optional interfaces: `RawKeyConsumer`, `Closer`, `StreamMsg`. |
-| `internal/engine` | `parseSize`/`distribute` layout math (`layout.go`), bubbletea root `Model` + prefix state machine + mouse hit-testing (`engine.go`), `Run` TTY entry (`run.go`), headless bounded `Snapshot` (`snapshot.go`). |
-| `main.go` | `run` / `validate` / `render` CLI. |
+| `internal/engine` | `parseSize`/`distribute` layout math (`layout.go`), bubbletea root `Model` + focus-lock state machine + directional focus + mouse hit-testing (`engine.go`), runner `Options` (`options.go`), adaptive-colour `theme` (`theme.go`), status bar + F1 help overlay (`chrome.go`), `Run`/`RunWithOptions` TTY entry (`run.go`), headless bounded `Snapshot`/`SnapshotWithOptions` (`snapshot.go`). `engine.New/Run/Snapshot` stay pure — the global config is read only in `main.go`. |
+| `main.go` | `run` / `validate` / `render` / `config` CLI. |
 | `examples/` | `hello`, `dashboard`, `responsive`, `keys`, `sysmon`, `pretty`, `devdash`, `multiplex` + `compiled/` (go:embed wrapper); `examples/README.md` maps each to what it demonstrates and a render size. |
 
-Deps: `bubbletea`, `lipgloss` (UI); `creack/pty` + `charmbracelet/x/vt` (interactive `shell` panes — pty + VT emulator).
+Deps: `bubbletea`, `lipgloss` (UI); `charmbracelet/x/ansi` (ANSI-safe help-overlay splice); `creack/pty` + `charmbracelet/x/vt` (interactive `shell` panes — pty + VT emulator).
 
 Import direction: `engine` → `widget` → `config` → (nothing). Keep it acyclic.
 
@@ -40,7 +41,10 @@ Import direction: `engine` → `widget` → `config` → (nothing). Keep it acyc
 - **Widgets are a compile-time registry, not plugins.** `widget.Register(kind, factory)` + config selecting a kind by name. No `plugin.Open`, no `dlopen`, no subprocess-as-module. This is what makes "runtime, dynamic-linked, and static-linked" the *same engine* — runtime reads config from disk, static `go:embed`s it, dynamic reads a path; all call `engine.Run`. "Total modularity" from `DESIGN.md` will tempt a rewrite toward plugins — resist; add a widget file instead.
 - **Config is strict JSON.** `DESIGN.md`'s "markdown json" was ambiguous; resolved to one strict decoder (`DisallowUnknownFields`, so typos error). Nodes are split-XOR-leaf by key presence, not a discriminator field.
 - **Two process widgets, on purpose.** `command` runs once and captures text into a scroll pane. `shell` hosts a *real interactive process* (htop, vim, cmatrix, `$SHELL`) on a pty, feeds its output through a `charmbracelet/x/vt` emulator, and forwards keystrokes via `keyToBytes`. Don't merge them; don't make `command` grow a pty.
-- **Interactive panes + the prefix key.** A `shell` widget implements `widget.RawKeyConsumer` → while it is focused the engine forwards *every* key to the child (so htop gets its own `q`/`ctrl+c`/F-keys) and only intercepts `Config.Prefix` (default `ctrl+b`). `<prefix>` then a key = run that key's action; `<prefix><prefix>` = literal prefix byte to the child. A plain (non-raw) pane keeps the old behaviour: global keybindings win, rest fall through.
+- **Focus lock replaces the tmux prefix.** Two modes. **NAV**: arrows do directional focus, `Tab` cycles, `Enter` locks the focused pane, bound keys run their action, unbound keys fall through to the widget. **LOCKED**: every key goes to the focused widget — this is when a `RawKeyConsumer` (`shell`) pane actually receives raw keys, so htop/vim get their own `q`/F-keys. `Esc` releases; on a raw pane the first `Esc` buffers and `Esc Esc` sends a literal `Esc` to the child. `isGlobalKey` — anything starting `mod+` (mod = Alt by default, set in the global config), plus `F1` and `Ctrl+C` — is intercepted in **both** modes, so there is always a way out. `Config.Prefix` is parsed-but-ignored (kept so old configs don't fail `DisallowUnknownFields`). Don't reintroduce a leader-key state machine.
+- **Engine stays config-file-agnostic.** `engine.New/Run/Snapshot` use `DefaultOptions()`; `*WithOptions` variants take an `engine.Options`. The global runner config (`config.LoadGlobal`) is read **only in `main.go`** and folded in via `OptionsFromGlobal` — so tests never depend on `~/.config`.
+- **Status bar owns the last row.** When shown (`Options.StatusBar` && height ≥ 6) the layout tree gets `height-1`; `rectW/rectH` are stamped to that body size and mouse/`focusDir` staleness checks compare against `bodyDims()`, not the raw terminal size.
+- **F1 help is a real overlay.** `overlayCenter` (chrome.go) splices the panel into the rendered frame ANSI-safely with `x/ansi` `Truncate`/`TruncateLeft` — it does not blank the background. While it is open `handleKey` returns early, so no key leaks to a locked pane.
 - **Mouse.** `render` records each leaf's absolute rect (stamped with the size it was computed at); `Update` hit-tests `tea.MouseMsg` against them — left-press focuses, wheel scrolls the pane *under the cursor* without moving focus. Mouse events are ignored when the rect stamp ≠ current size (stale) or before the first `View`.
 - **`Snapshot` is bounded.** A `shell` read loop is infinite by design, so `drain` runs each command with a timeout + step/elapsed caps and applies a `StreamMsg` once without following it. `Snapshot` always `m.Close()`s to kill spawned children. Interactive apps that paint on a timer (htop) won't have painted in a headless frame — that's expected; `run` gives them real time.
 - **lipgloss sizing in `renderLeaf`:** `Width/Height` set the content area, a border adds 2 outside. Never put `MaxWidth/MaxHeight` on a bordered style — it clips the final output including the border and shears an edge.

@@ -22,7 +22,12 @@ const (
 // rendered frame. It never touches a TTY and always releases any child
 // processes it spawned.
 func Snapshot(cfg *config.Config, width, height int) (string, error) {
-	m, err := New(cfg)
+	return SnapshotWithOptions(cfg, width, height, DefaultOptions())
+}
+
+// SnapshotWithOptions is Snapshot with explicit runner options.
+func SnapshotWithOptions(cfg *config.Config, width, height int, opts Options) (string, error) {
+	m, err := NewWithOptions(cfg, opts)
 	if err != nil {
 		return "", err
 	}

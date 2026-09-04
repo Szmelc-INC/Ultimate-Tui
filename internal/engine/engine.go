@@ -1,6 +1,6 @@
 // Package engine turns a parsed config into a running bubbletea program: it
-// builds the layout tree, owns focus and global keybindings, and renders each
-// pane's widget into its computed rectangle.
+// builds the layout tree, owns focus, the focus-lock state machine and global
+// keybindings, and renders each pane's widget into its computed rectangle.
 package engine
 
 import (
@@ -14,19 +14,33 @@ import (
 	"github.com/silverx/ultimate-tui/internal/widget"
 )
 
-// defaultKeys are merged under the config's keybindings (config wins).
-var defaultKeys = map[string]string{
-	"ctrl+c":    "quit",
-	"q":         "quit",
-	"tab":       "focus-next",
-	"shift+tab": "focus-prev",
-}
-
 // Actions a keybinding can name.
 const (
 	actQuit      = "quit"
 	actFocusNext = "focus-next"
 	actFocusPrev = "focus-prev"
+	actHelp      = "help"
+	actLock      = "lock"
+	actUnlock    = "unlock"
+)
+
+// baseBinds are merged under the global options and the TUI config (config
+// wins). "mod+" is expanded to the configured modifier before use.
+var baseBinds = map[string]string{
+	"ctrl+c":    actQuit,
+	"mod+q":     actQuit,
+	"tab":       actFocusNext,
+	"shift+tab": actFocusPrev,
+	"f1":        actHelp,
+}
+
+type direction int
+
+const (
+	dirUp direction = iota
+	dirDown
+	dirLeft
+	dirRight
 )
 
 type node struct {
@@ -45,7 +59,8 @@ type leaf struct {
 	border bool
 	w      widget.Widget
 
-	// absolute rectangle from the last render, for mouse hit-testing.
+	// absolute rectangle from the last render, for mouse hit-testing and
+	// directional focus movement.
 	x, y, pw, ph int
 }
 
@@ -58,20 +73,39 @@ type Model struct {
 	w, h   int
 	ready  bool
 
-	prefix        string // leader key for interactive panes
-	pendingPrefix bool   // prefix seen, next key is an action
-	rectW, rectH  int    // size the leaf rectangles were computed at
+	opts    Options
+	mod     string            // resolved modifier token ("alt")
+	tuiKeys map[string]string // the config's own bindings, for the help view
+
+	locked     bool // focus is locked into the focused pane (keys go to it)
+	pendingEsc bool // one Esc seen inside a locked raw pane; a second = literal
+	helpOpen   bool
+
+	rectW, rectH int // body size the leaf rectangles were computed at
 }
 
-// New builds a Model from config.
+// New builds a Model from config with the default runner options.
 func New(cfg *config.Config) (*Model, error) {
-	m := &Model{keys: map[string]string{}}
-	for k, v := range defaultKeys {
-		m.keys[k] = v
+	return NewWithOptions(cfg, DefaultOptions())
+}
+
+// NewWithOptions builds a Model, applying runner-wide Options. Binding
+// precedence, lowest to highest: baseBinds < opts.Keys < cfg.Keybindings.
+func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
+	if opts.Mod == "" {
+		opts.Mod = "alt"
 	}
-	for k, v := range cfg.Keybindings {
-		m.keys[k] = v
+	m := &Model{keys: map[string]string{}, opts: opts, mod: opts.Mod}
+
+	put := func(src map[string]string) {
+		for k, v := range src {
+			m.keys[expandMod(k, m.mod)] = v
+		}
 	}
+	put(baseBinds)
+	put(opts.Keys)
+	put(cfg.Keybindings)
+	m.tuiKeys = cfg.Keybindings
 
 	root, err := m.build(&cfg.Layout, "layout")
 	if err != nil {
@@ -81,12 +115,15 @@ func New(cfg *config.Config) (*Model, error) {
 	if len(m.leaves) == 0 {
 		return nil, fmt.Errorf("engine: layout has no panes")
 	}
-
-	m.prefix = cfg.Prefix
-	if m.prefix == "" {
-		m.prefix = "ctrl+b"
-	}
 	return m, nil
+}
+
+// expandMod rewrites a leading "mod+" token to the configured modifier.
+func expandMod(key, mod string) string {
+	if strings.HasPrefix(key, "mod+") {
+		return mod + "+" + strings.TrimPrefix(key, "mod+")
+	}
+	return key
 }
 
 func (m *Model) build(n *config.Node, path string) (node, error) {
@@ -131,10 +168,10 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Update routes messages. Keys: a focused interactive pane (RawKeyConsumer)
-// gets everything except the prefix; otherwise global keybindings win and the
-// rest fall through to the focused widget. Mouse: click focuses the pane under
-// the cursor, wheel scrolls it. Everything else is broadcast to all widgets.
+// Update routes messages. Keys flow through handleKey (global binds, then the
+// focus-lock state machine). Mouse clicks focus / release the lock; wheel
+// scrolls the pane under the cursor. Everything else is broadcast to all
+// widgets.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -160,37 +197,92 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// handleKey implements the whole keyboard contract:
+//
+//   - The help overlay, when open, swallows every key (Esc/F1/q/Ctrl+C close it).
+//   - Global bindings (the "mod+…" set, Ctrl+C, F1) always win — even inside a
+//     locked interactive pane. That is what makes "mod" a reliable escape hatch.
+//   - Unlocked: arrows / Tab move focus; Enter locks into the focused pane.
+//     Unbound keys still fall through to the focused widget (text-pane scroll).
+//   - Locked: every key goes to the widget. Esc releases the lock; for a raw
+//     pane the first Esc is buffered and a second Esc sends a literal Esc to the
+//     child (Esc-Esc), so vim stays usable.
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	focused := m.leaves[m.focus].w
-	rk, ok := focused.(widget.RawKeyConsumer)
-	rawActive := ok && rk.ConsumesRawKeys()
 
-	// A prefix was pressed last: this key selects an action (or, if it is the
-	// prefix again, is sent to the child verbatim).
-	if m.pendingPrefix {
-		m.pendingPrefix = false
-		if rawActive && key == m.prefix {
-			return m.forwardKey(msg)
-		}
-		if action, ok := m.keys[key]; ok {
-			return m.runAction(action)
+	if m.helpOpen {
+		switch key {
+		case "ctrl+c":
+			m.Close()
+			return m, tea.Quit
+		case "f1", "esc", "q", "enter", " ":
+			m.helpOpen = false
 		}
 		return m, nil
 	}
 
-	if rawActive {
-		if key == m.prefix {
-			m.pendingPrefix = true
+	// Global bindings win unconditionally.
+	if m.isGlobalKey(key) {
+		if action, ok := m.keys[key]; ok {
+			return m.runAction(action)
+		}
+	}
+
+	focused := m.leaves[m.focus].w
+	rk, isRaw := focused.(widget.RawKeyConsumer)
+	rawWanted := isRaw && rk.ConsumesRawKeys()
+
+	if m.locked {
+		if key == "esc" {
+			if m.pendingEsc {
+				m.pendingEsc = false
+				return m.forwardKey(msg) // Esc-Esc → literal Esc to child
+			}
+			if rawWanted {
+				m.pendingEsc = true // buffer; wait to see if a second Esc follows
+				return m, nil
+			}
+			m.locked = false
 			return m, nil
+		}
+		if m.pendingEsc {
+			// A non-Esc key after a buffered Esc: treat the lone Esc as "release"
+			// and re-handle this key unlocked.
+			m.pendingEsc = false
+			m.locked = false
+			return m.handleKey(msg)
 		}
 		return m.forwardKey(msg)
 	}
 
+	// Unlocked / navigation mode.
+	switch key {
+	case "up":
+		m.focusDir(dirUp)
+		return m, nil
+	case "down":
+		m.focusDir(dirDown)
+		return m, nil
+	case "left":
+		m.focusDir(dirLeft)
+		return m, nil
+	case "right":
+		m.focusDir(dirRight)
+		return m, nil
+	case "enter":
+		m.locked = true
+		return m, nil
+	}
 	if action, ok := m.keys[key]; ok {
 		return m.runAction(action)
 	}
 	return m.forwardKey(msg)
+}
+
+// isGlobalKey reports whether a key is one the engine intercepts even inside a
+// locked pane: anything carrying the modifier, plus Ctrl+C and F1.
+func (m *Model) isGlobalKey(key string) bool {
+	return key == "ctrl+c" || key == "f1" || strings.HasPrefix(key, m.mod+"+")
 }
 
 func (m *Model) forwardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -206,15 +298,88 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case actFocusNext:
 		m.focus = (m.focus + 1) % len(m.leaves)
+		m.locked, m.pendingEsc = false, false
 	case actFocusPrev:
 		m.focus = (m.focus - 1 + len(m.leaves)) % len(m.leaves)
+		m.locked, m.pendingEsc = false, false
+	case actHelp:
+		m.helpOpen = true
+	case actLock:
+		m.locked = true
+	case actUnlock:
+		m.locked, m.pendingEsc = false, false
 	}
 	return m, nil
 }
 
+// focusDir moves focus to the nearest pane in a direction. It uses the leaf
+// rectangles from the last render; when those are stale/unstamped it falls back
+// to ring order (up/left = previous, down/right = next).
+func (m *Model) focusDir(d direction) {
+	bw, bh := m.bodyDims()
+	if len(m.leaves) < 2 {
+		return
+	}
+	if m.rectW != bw || m.rectH != bh {
+		m.ringStep(d)
+		return
+	}
+	cur := m.leaves[m.focus]
+	ccx, ccy := cur.x+cur.pw/2, cur.y+cur.ph/2
+	best, bestScore := -1, 1<<62
+	for i, lf := range m.leaves {
+		if i == m.focus {
+			continue
+		}
+		dx := lf.x + lf.pw/2 - ccx
+		dy := lf.y + lf.ph/2 - ccy
+		switch d {
+		case dirUp:
+			if dy >= 0 {
+				continue
+			}
+		case dirDown:
+			if dy <= 0 {
+				continue
+			}
+		case dirLeft:
+			if dx >= 0 {
+				continue
+			}
+		case dirRight:
+			if dx <= 0 {
+				continue
+			}
+		}
+		// Distance, biased hard against off-axis drift.
+		score := dx*dx + dy*dy
+		if d == dirUp || d == dirDown {
+			score += 3 * dx * dx
+		} else {
+			score += 3 * dy * dy
+		}
+		if score < bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best >= 0 {
+		m.focus = best
+		return
+	}
+	m.ringStep(d)
+}
+
+func (m *Model) ringStep(d direction) {
+	if d == dirDown || d == dirRight {
+		m.focus = (m.focus + 1) % len(m.leaves)
+	} else {
+		m.focus = (m.focus - 1 + len(m.leaves)) % len(m.leaves)
+	}
+}
+
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Rectangles are only meaningful for the size they were rendered at.
-	if !m.ready || m.rectW != m.w || m.rectH != m.h {
+	bw, bh := m.bodyDims()
+	if !m.ready || m.rectW != bw || m.rectH != bh {
 		return m, nil
 	}
 	i := m.leafAt(msg.X, msg.Y)
@@ -222,14 +387,15 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+		if i != m.focus {
+			m.locked, m.pendingEsc = false, false
+		}
 		m.focus = i
-		m.pendingPrefix = false
 		return m, nil
 	}
 	switch msg.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown,
 		tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
-		// Scroll the pane under the cursor without stealing focus.
 		nw, cmd := m.leaves[i].w.Update(msg)
 		m.leaves[i].w = nw
 		return m, cmd
@@ -255,14 +421,34 @@ func (m *Model) Close() {
 	}
 }
 
+// bodyDims returns the area available to the layout tree — the full terminal
+// minus the status bar row when it is shown.
+func (m *Model) bodyDims() (int, int) {
+	if m.statusBarVisible() {
+		return m.w, m.h - 1
+	}
+	return m.w, m.h
+}
+
+func (m *Model) statusBarVisible() bool { return m.opts.StatusBar && m.h >= 6 }
+
 // View renders the whole tree and records each pane's rectangle for mouse
 // hit-testing.
 func (m *Model) View() string {
 	if !m.ready {
 		return "loading…"
 	}
-	out := m.render(m.root, 0, 0, m.w, m.h)
-	m.rectW, m.rectH = m.w, m.h
+	bw, bh := m.bodyDims()
+	body := m.render(m.root, 0, 0, bw, bh)
+	m.rectW, m.rectH = bw, bh
+
+	out := body
+	if m.statusBarVisible() {
+		out = lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar(m.w))
+	}
+	if m.helpOpen {
+		out = m.renderHelp(out)
+	}
 	return out
 }
 
@@ -302,13 +488,8 @@ func (m *Model) render(n node, x, y, w, h int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-var (
-	titleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	focusBorderCol  = lipgloss.Color("62")
-	idleBorderColor = lipgloss.Color("240")
-)
-
 func (m *Model) renderLeaf(lf *leaf, w, h int) string {
+	th := m.theme()
 	innerW, innerH := w, h
 	if lf.border {
 		innerW, innerH = w-2, h-2
@@ -322,15 +503,19 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	bodyH := innerH
 	var head string
 	title := lf.title
-	if focused && m.pendingPrefix {
-		title = strings.TrimSpace(title + "  ⌨ PREFIX — press a nav key")
+	if focused && m.locked {
+		title = strings.TrimSpace(title + "  ● LOCKED")
 	}
 	if title != "" {
 		// One line, always: collapse newlines and let MaxWidth truncate. A
 		// Width() here would *wrap* an over-long title into 2+ lines and blow
 		// the pane's height.
 		flat := strings.ReplaceAll(title, "\n", " ")
-		head = titleStyle.MaxWidth(innerW).Inline(true).Render(flat)
+		ts := th.title
+		if focused {
+			ts = th.titleFocus
+		}
+		head = ts.MaxWidth(innerW).Inline(true).Render(flat)
 		bodyH = innerH - 1
 	}
 
@@ -356,11 +541,14 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	// output *including* the border, shearing off the bottom/right edge.
 	box := lipgloss.NewStyle().Width(innerW).Height(innerH)
 	if lf.border {
-		box = box.Border(lipgloss.NormalBorder())
-		if focused {
-			box = box.BorderForeground(focusBorderCol)
-		} else {
-			box = box.BorderForeground(idleBorderColor)
+		box = box.Border(lipgloss.RoundedBorder())
+		switch {
+		case focused && m.locked:
+			box = box.BorderForeground(th.borderLock)
+		case focused:
+			box = box.BorderForeground(th.borderFocus)
+		default:
+			box = box.BorderForeground(th.borderIdle)
 		}
 	} else {
 		box = box.MaxWidth(innerW).MaxHeight(innerH)
@@ -380,6 +568,17 @@ func (m *Model) Focused() string {
 
 // PaneCount reports the number of leaves.
 func (m *Model) PaneCount() int { return len(m.leaves) }
+
+// Locked reports whether focus is currently locked into the focused pane.
+func (m *Model) Locked() bool { return m.locked }
+
+// Mode is "NAV" or "LOCKED" — the string the status bar shows.
+func (m *Model) Mode() string {
+	if m.locked {
+		return "LOCKED"
+	}
+	return "NAV"
+}
 
 // clampLines trims s to at most n lines (never pads — lipgloss Height does that).
 func clampLines(s string, n int) string {

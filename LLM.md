@@ -1,13 +1,16 @@
 # LLM.md — ULTIMATE TUI, compressed for coding agents
 
 Status: MVP. Go module `github.com/silverx/ultimate-tui`, Go 1.26. Direct deps:
-bubbletea, lipgloss, creack/pty, charmbracelet/x/vt. No plugin system by design.
+bubbletea, lipgloss, creack/pty, charmbracelet/x/{vt,ansi}. No plugin system by
+design.
 
 ## Package map
 
 - `internal/config` — schema structs + `Parse([]byte)` / `Load(path)`. Strict
   JSON (`DisallowUnknownFields`). `Validate()` enforces tree invariants.
   `Parse` is the ONLY place the wire format is known — add YAML here, nowhere else.
+  `global.go`: `GlobalConfig` + `LoadGlobal()` / `ParseGlobal()` — the runner-wide
+  config at `$XDG_CONFIG_HOME/ultui/config.json` (missing file → `nil,nil`).
 - `internal/widget` — `Widget` interface, `Register(kind, Factory)` /
   `New(*config.Pane)` registry. Kinds self-register in `init()`: `text`,
   `command`, `shell`. `scrollBox` (scroll.go) = shared scroll/wrap/wheel.
@@ -15,9 +18,13 @@ bubbletea, lipgloss, creack/pty, charmbracelet/x/vt. No plugin system by design.
   `RawKeyConsumer` (want every key), `Closer` (owns OS resources), `StreamMsg`
   (endless read-loop msg marker).
 - `internal/engine` — `sizeSpec`/`parseSize`/`distribute` (layout.go), `Model`
-  (bubbletea root, engine.go: prefix state machine + mouse hit-test), `Run(cfg)`
-  (run.go, TTY + mouse), `Snapshot(cfg,w,h)` (snapshot.go, bounded headless frame).
-- `main.go` — CLI: `run`, `validate`, `render`, `version`, `help`.
+  (bubbletea root, engine.go: focus-lock state machine + directional focus +
+  mouse hit-test), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
+  `theme` palette (theme.go), status bar + F1 help overlay (chrome.go),
+  `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions` (snapshot.go).
+- `main.go` — CLI: `run`, `validate`, `render`, `config`, `version`, `help`.
+  `run`/`render` load the global config via `config.LoadGlobal` →
+  `engine.OptionsFromGlobal` and pass it to `*WithOptions`.
 
 ## Data model
 
@@ -27,30 +34,45 @@ bubbletea, lipgloss, creack/pty, charmbracelet/x/vt. No plugin system by design.
 `Child` embeds `Node` + `Size string`.
 `Pane`: `Type`, `Title`, `Border *bool` (nil→true), then flat widget fields
 (`Content`; `Command`, `Shell`).
-`Config.Prefix` (json "prefix", default "ctrl+b") = leader key for raw-key panes.
+`Config.Prefix` (json "prefix") is **deprecated and ignored** — still parsed so
+old configs don't fail `DisallowUnknownFields`.
 
-Engine mirrors this into unexported `node`/`child`/`leaf`; `leaf.w` holds the
-live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus` indexes it.
+`GlobalConfig`: `Mod` (""→"alt"), `StatusBar *bool` (nil→true), `Theme`
+(""|"dark"|"light"), `Keybindings map[string]string`. Folded into
+`engine.Options` by `OptionsFromGlobal`.
+
+Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
+the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
+indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
+locked raw pane; `m.helpOpen` = F1 overlay.
 
 ## Control flow
 
-- `New(cfg)`: merge `defaultKeys` ← `cfg.Keybindings`; `build()` recurses,
-  instantiating widgets and appending to `m.leaves`.
+- `NewWithOptions(cfg, opts)` (`New` = defaults): key precedence
+  `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through `expandMod`
+  ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `ctrl+c`/`mod+q`→quit,
+  `tab`/`shift+tab`→focus-next/prev, `f1`→help. Arrows/Enter/Esc are handled in
+  code, not the map. `build()` recurses, instantiating widgets into `m.leaves`.
 - `Update`: `WindowSizeMsg`→store size+`ready`.
-  - `KeyMsg` → `handleKey`: if focused widget is a `RawKeyConsumer` and active,
-    only `m.prefix` is caught (sets `pendingPrefix`); `<prefix><prefix>` →
-    literal to child; `<prefix> X` → action for X. Non-raw pane: `m.keys` wins,
-    else forward to focused widget.
-  - `MouseMsg` → `handleMouse`: no-op unless `rectW/rectH == w/h` (rects fresh).
-    Left press → focus `leafAt(X,Y)`. Wheel → forward to that leaf's widget, no
-    focus change.
+  - `KeyMsg` → `handleKey`:
+    1. help open → only Esc/F1/q/Enter/Space (close) or Ctrl+C (quit) act.
+    2. `isGlobalKey` (starts `mod+`, or `ctrl+c`/`f1`) → run bound action even
+       when locked. This is the guaranteed escape hatch.
+    3. locked → `esc` releases (raw pane: first `esc` buffers, `esc esc` forwards
+       a literal Esc, any other key after a lone buffered esc releases + re-runs);
+       otherwise forward the key to the focused widget.
+    4. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
+       when rects are stale); `enter` locks; else bound action; else forward.
+  - `MouseMsg` → `handleMouse`: no-op unless `rectW/rectH == bodyDims()`. Left
+    press → focus `leafAt`, clears lock if the pane changed. Wheel → forward to
+    that leaf, no focus change.
   - other msg → broadcast to all widgets.
-- Mouse reporting ON via `tea.WithMouseCellMotion()` in `run.go`; `Run` calls
-  `m.Close()` after the program ends to kill child processes.
-- `View`/`render`: `render(n, x, y, w, h)` recurses tracking absolute origin;
-  each leaf stores its rect (`x,y,pw,ph`) for mouse hit-testing. `View` stamps
-  `rectW/rectH`. split→`distribute` axis cells→render children→
-  `lipgloss.JoinHorizontal/Vertical`. leaf→`renderLeaf`.
+- `View`: `bodyDims()` = full size minus 1 row when the status bar shows
+  (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp
+  `rectW/rectH` to the body size, append `statusBar(w)`, then if `helpOpen`
+  splice `helpPanel()` centered via `overlayCenter` (ANSI-safe, `x/ansi` Truncate
+  + TruncateLeft). `render(n,x,y,w,h)` recurses tracking absolute origin; each
+  leaf stores its rect (`x,y,pw,ph`).
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
   row). Body = `widget.View(innerW, bodyH)`. Wrap in
   `lipgloss.NewStyle().Width(innerW).Height(innerH)` + border.
@@ -110,10 +132,17 @@ per-pane options blob and decode in the factory.
 - Every split should contain a flex child; layout does not error on fixed-cell
   overflow, it clamps to 0 and may look wrong. `Validate` DOES reject a split
   whose child percentages sum > 100.
-- Global keybindings win over widget keys for non-raw panes — a config can't
-  currently *unbind* a default, only remap the same key.
-- A focused `RawKeyConsumer` pane gets ALL keys except `Config.Prefix`; that is
-  the only escape hatch, so `Prefix` must never be empty (`New` defaults it).
+- A config can remap a key but can't *unbind* a default (same-key remap only).
+- Unlocked, the engine owns arrows/Tab/Enter and every bound key; other keys
+  fall through to the focused widget. Locked, only `isGlobalKey` (mod+…, F1,
+  Ctrl+C) and `esc` are intercepted — everything else goes to the widget. A
+  `RawKeyConsumer` pane only receives raw keys **while locked**, so the user must
+  press Enter to drive `htop`/`vim`; `mod+…` is always a way out.
+- `engine.New/Run/Snapshot` stay pure (default options). The global config is
+  loaded in `main.go` only, so tests never touch `~/.config`.
+- Status bar eats the last row (`bodyDims`); `rectW/rectH` are stamped to the
+  body size, and `handleMouse`/`focusDir` compare against `bodyDims()`, not
+  `w/h`.
 - Never call `emu.Read` off the bubbletea goroutine (x/vt race). Consequence:
   terminal-query responses are not forwarded to `shell` children.
 - Leaf rects are only valid for the last-rendered size — `handleMouse` bails if

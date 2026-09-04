@@ -6,11 +6,16 @@ import (
 	"github.com/silverx/ultimate-tui/internal/config"
 )
 
-// Run builds and runs a program for cfg, blocking until the user quits. Both
-// the `ultui run` command and go:embed-compiled wrappers call this — it is the
-// single execution path for every build mode.
+// Run builds and runs a program for cfg with the default runner options.
 func Run(cfg *config.Config) error {
-	m, err := New(cfg)
+	return RunWithOptions(cfg, DefaultOptions())
+}
+
+// RunWithOptions builds and runs a program for cfg, blocking until the user
+// quits. Both `ultui run` and go:embed-compiled wrappers reach this — it is the
+// single execution path for every build mode.
+func RunWithOptions(cfg *config.Config, opts Options) error {
+	m, err := NewWithOptions(cfg, opts)
 	if err != nil {
 		return err
 	}

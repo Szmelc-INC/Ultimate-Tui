@@ -27,6 +27,8 @@ func main() {
 		os.Exit(cmdValidate(os.Args[2:]))
 	case "render":
 		os.Exit(cmdRender(os.Args[2:]))
+	case "config":
+		os.Exit(cmdConfig(os.Args[2:]))
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	case "help", "-h", "--help":
@@ -48,11 +50,55 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
 	}
-	if err := engine.Run(cfg); err != nil {
+	opts, err := runnerOptions()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ultui:", err)
+		return 1
+	}
+	if err := engine.RunWithOptions(cfg, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
 	}
 	return 0
+}
+
+// runnerOptions loads the global runner config and folds it over the engine
+// defaults. A missing file is fine; a malformed one is an error.
+func runnerOptions() (engine.Options, error) {
+	gc, err := config.LoadGlobal()
+	if err != nil {
+		return engine.Options{}, err
+	}
+	return engine.OptionsFromGlobal(gc), nil
+}
+
+func cmdConfig(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: ultui config")
+		return 2
+	}
+	path := config.GlobalPath()
+	fmt.Println("global config:", path)
+	gc, err := config.LoadGlobal()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "invalid:", err)
+		return 1
+	}
+	if gc == nil {
+		fmt.Println("status: not present — using built-in defaults")
+	} else {
+		fmt.Println("status: loaded")
+	}
+	opts := engine.OptionsFromGlobal(gc)
+	fmt.Printf("effective: mod=%q statusbar=%v theme=%q\n", opts.Mod, opts.StatusBar, orAuto(opts.Theme))
+	return 0
+}
+
+func orAuto(s string) string {
+	if s == "" {
+		return "auto"
+	}
+	return s
 }
 
 func cmdValidate(args []string) int {
@@ -95,7 +141,12 @@ func cmdRender(args []string) int {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
 	}
-	frame, err := engine.Snapshot(cfg, w, h)
+	opts, err := runnerOptions()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ultui:", err)
+		return 1
+	}
+	frame, err := engine.SnapshotWithOptions(cfg, w, h, opts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
@@ -124,9 +175,11 @@ usage:
   ultui run <config.json>              render and run a TUI
   ultui validate <config.json>         parse and type-check a config
   ultui render <config.json> [WxH]     print one headless frame to stdout
+  ultui config                         show the global runner config + effective settings
   ultui version
   ultui help
 
-widget types: %v
-`, version, widget.Kinds())
+global config: %s
+widget types:  %v
+`, version, config.GlobalPath(), widget.Kinds())
 }

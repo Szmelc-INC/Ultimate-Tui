@@ -1,10 +1,9 @@
 {
   "name": "multiplex",
   "version": "0.1.0",
-  "prefix": "ctrl+b",
   "keybindings": {
-    "l": "focus-next",
-    "h": "focus-prev"
+    "mod+l": "focus-next",
+    "mod+h": "focus-prev"
   },
   "layout": {
     "direction": "column",
@@ -14,7 +13,7 @@
         "pane": {
           "type": "text",
           "border": false,
-          "content": "  multiplex   —   click a pane to focus it · wheel scrolls · in an interactive pane press  ctrl+b  then a nav key ( h / l / q )"
+          "content": "  multiplex   —   arrows move focus · Enter locks into a pane · Esc releases · click / wheel with the mouse · F1 help · alt+q quit"
         }
       },
       {

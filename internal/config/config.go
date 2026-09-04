@@ -17,11 +17,12 @@ type Config struct {
 	Name        string            `json:"name"`
 	Version     string            `json:"version,omitempty"`
 	Keybindings map[string]string `json:"keybindings,omitempty"`
-	// Prefix is the tmux-style leader key. While an interactive pane (a
-	// widget that consumes raw keys, e.g. "shell") is focused, only this key
-	// is caught by the engine; the next key after it is looked up as an
-	// action. Press it twice to send a literal prefix byte to the child.
-	// Default: "ctrl+b".
+	// Prefix is accepted for backward compatibility but no longer used. The
+	// tmux-style leader key was replaced by the focus-lock model: press Enter
+	// to lock keys into a pane, Esc to release (Esc-Esc sends a literal Esc to
+	// a child). The engine's global bindings use the "mod+" modifier instead.
+	//
+	// Deprecated: ignored by the engine.
 	Prefix string `json:"prefix,omitempty"`
 	Layout Node   `json:"layout"`
 }

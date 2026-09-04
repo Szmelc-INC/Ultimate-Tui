@@ -85,12 +85,12 @@ func TestMouseWheelScrollsWithoutChangingFocus(t *testing.T) {
 	}
 }
 
-func TestPrefixKeyGuardsInteractivePane(t *testing.T) {
-	// Pane 0 is a shell (RawKeyConsumer). A bare 'q' must NOT quit; the prefix
-	// then 'q' must. Prefix then a nav key must move focus.
+func TestFocusLockGuardsInteractivePane(t *testing.T) {
+	// Pane 0 is a shell (RawKeyConsumer). Unlocked, arrow keys navigate away
+	// from it (the shell does NOT swallow them). Enter locks focus in; while
+	// locked, bare keys reach the child but the modifier binding still quits.
 	src := `{
-      "name": "prefix",
-      "prefix": "ctrl+b",
+      "name": "lock",
       "layout": { "direction": "row", "children": [
         { "size": "50%", "pane": { "type": "shell", "title": "sh", "command": "sleep 30" } },
         { "size": "*", "pane": { "type": "text", "title": "note", "content": "x" } }
@@ -108,26 +108,42 @@ func TestPrefixKeyGuardsInteractivePane(t *testing.T) {
 	defer m.Close()
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
 	m = mm.(*engine.Model)
+	_ = m.View() // stamp rectangles for directional nav
 
-	// bare q -> goes to the shell, not quit
+	// Unlocked: right arrow moves focus off the shell pane.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = u.(*engine.Model)
+	if m.Focused() != "note" {
+		t.Fatalf("right arrow did not leave the shell pane; at %q", m.Focused())
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = u.(*engine.Model)
+	if m.Focused() != "sh" {
+		t.Fatalf("left arrow did not return to the shell pane; at %q", m.Focused())
+	}
+
+	// Bare 'q' while focused-but-unlocked: falls through to the shell, no quit.
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if isQuit(cmd) {
 		t.Fatal("bare 'q' quit while a shell pane was focused")
 	}
 
-	// prefix then tab -> focus moves
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
-	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if m.Focused() != "note" {
-		t.Fatalf("<prefix> tab did not move focus; at %q", m.Focused())
+	// Enter locks; arrows now reach the child, focus stays put.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(*engine.Model)
+	if !m.Locked() {
+		t.Fatal("Enter did not lock focus")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = u.(*engine.Model)
+	if m.Focused() != "sh" {
+		t.Fatalf("locked pane lost focus to an arrow key; at %q", m.Focused())
 	}
 
-	// focus back to shell, then prefix + q -> quit
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	// Modifier binding still quits, even while locked.
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q"), Alt: true})
 	if !isQuit(cmd) {
-		t.Fatal("<prefix> q did not quit")
+		t.Fatal("mod+q did not quit from inside a locked pane")
 	}
 }
 
@@ -139,11 +155,17 @@ func isQuit(cmd tea.Cmd) bool {
 	return ok
 }
 
-func TestNonInteractivePaneKeepsGlobalKeys(t *testing.T) {
+func TestModQuitsButBareQDoesNot(t *testing.T) {
 	m := newModel(t, twoCols, 60, 12)
+	_ = m.View()
+
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if isQuit(cmd) {
+		t.Fatal("bare 'q' should no longer quit")
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q"), Alt: true})
 	if !isQuit(cmd) {
-		t.Fatal("'q' should quit when a plain text pane is focused")
+		t.Fatal("mod+q (alt+q) should quit")
 	}
 	_ = strings.TrimSpace("")
 }

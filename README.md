@@ -38,11 +38,14 @@ typos surface.
 ```jsonc
 {
   "name": "system-dashboard",
-  "keybindings": { "1": "focus-next" },   // merged over the defaults
-  "prefix": "ctrl+b",                     // leader key for interactive panes
+  "keybindings": { "1": "focus-next", "mod+r": "quit" },  // merged over the defaults
   "layout": { /* a node */ }
 }
 ```
+
+Bindings map a key to `quit` / `focus-next` / `focus-prev` / `help` / `lock` /
+`unlock`. A `mod+` prefix expands to the modifier key (default **Alt** — set by
+the global runner config, see below).
 
 ### Nodes
 
@@ -86,22 +89,34 @@ draws its own screen or needs input.
 
 ### Keys
 
-Defaults: `tab` / `shift+tab` focus next/prev, `q` / `ctrl+c` quit. Scroll keys
-(`j`/`k`, arrows, `pgup`/`pgdn`, `g`) go to the focused widget. `keybindings` in
-the config remap any key to `quit` / `focus-next` / `focus-prev`.
+Two modes, shown in the bottom status bar:
 
-**Interactive (`shell`) panes** take over the keyboard while focused so the child
-program gets everything — including `q` and `ctrl+c`. To reach ultui's own keys,
-press the **prefix** first (`"prefix"` in the config, default `ctrl+b`), tmux
-style:
+| mode       | keys |
+|------------|------|
+| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `F1` help · `mod+q` quit · `Ctrl+C` force quit |
+| **LOCKED** | every key goes to the pane's widget (scroll a `text` pane, drive `htop`/`vim` in a `shell` pane) · `Esc` releases · `Esc Esc` sends a literal `Esc` to a `shell` child |
 
-| keys | effect |
-|------|--------|
-| `<prefix>` then `tab` / `h` / `l` / `q` … | run that key's action |
-| `<prefix>` `<prefix>` | send a literal prefix byte to the child |
+`mod` is the modifier — **Alt** by default. Terminals cannot tell left Alt from
+right Alt, so any Alt press counts. `mod+…` and `F1` and `Ctrl+C` are caught
+even while a pane is LOCKED, so there is always a way out.
 
-The focused interactive pane shows `⌨ PREFIX` in its title while it waits for the
-second key.
+**`F1`** opens a centered popup listing every active binding — the engine's plus
+this TUI's own `keybindings`.
+
+### Global runner config
+
+`~/.config/ultui/config.json` (or `$XDG_CONFIG_HOME/ultui/config.json`) applies
+to **every** TUI you run. All keys optional; a missing file is fine. Run
+`ultui config` to see the resolved path and effective values.
+
+```jsonc
+{
+  "mod": "alt",                 // modifier for "mod+" bindings: alt | ctrl | ...
+  "statusbar": true,            // bottom mode/hint bar (auto-hidden under 6 rows)
+  "theme": "",                  // "", "dark", "light"  (""=auto-detect)
+  "keybindings": { "mod+/": "help" }   // merged under every TUI's own bindings
+}
+```
 
 ### Mouse
 
@@ -135,12 +150,14 @@ make render EXAMPLE=examples/hello.json SIZE=100x30
 Layout:
 
 ```
-internal/config   schema + strict loader (Parse is the only format seam)
+internal/config   schema + strict loader (Parse is the only format seam);
+                  global runner config (global.go)
 internal/widget   Widget interface + kind registry; text · command · shell
                   scrollBox (scroll.go), keyToBytes (keys.go)
-internal/engine   layout math, bubbletea model, prefix + mouse routing,
+internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
+                  theme + status bar + F1 help (theme.go, chrome.go),
                   bounded headless Snapshot
-main.go           run / validate / render CLI
+main.go           run / validate / render / config CLI
 examples/         hello · dashboard · responsive · keys · sysmon · pretty ·
                   devdash · multiplex · compiled/   —  see examples/README.md
 ```

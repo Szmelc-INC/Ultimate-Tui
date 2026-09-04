@@ -2,22 +2,19 @@
   "name": "keybindings-demo",
   "version": "0.1.0",
   "keybindings": {
-    "l":       "focus-next",
-    "right":   "focus-next",
-    "h":       "focus-prev",
-    "left":    "focus-prev",
-    "ctrl+n":  "focus-next",
-    "ctrl+p":  "focus-prev"
+    "mod+n": "focus-next",
+    "mod+p": "focus-prev",
+    "mod+h": "help"
   },
   "layout": {
     "direction": "row",
     "children": [
       {
-        "size": "34",
+        "size": "36",
         "pane": {
           "type": "text",
           "title": "how keys work",
-          "content": "The engine has a small set of ACTIONS:\n\n  quit\n  focus-next\n  focus-prev\n\nThe \"keybindings\" block in this config maps keys onto them. Here we bound:\n\n  h / left / ctrl+p  ->  focus-prev\n  l / right / ctrl+n ->  focus-next\n  q / ctrl+c         ->  quit  (defaults)\n\nAny key NOT claimed globally is handed to the focused pane. The scrollable\nwidgets accept:\n\n  j / k        line down / up\n  arrows       line down / up\n  pgdn / pgup  page down / up\n  space / f    page down\n  b            page up\n  g / home     jump to top\n\nFocus this pane and scroll — the\nborder colour marks who has focus."
+          "content": "Two modes — the bottom bar shows which.\n\nNAV (default)\n  arrows       move focus to the pane that way\n  Tab / S-Tab  cycle focus\n  Enter        LOCK focus into this pane\n  F1           this help, as a popup\n  alt+q        quit   (alt = the modifier)\n\nLOCKED\n  every key goes to the pane's widget\n  Esc          release the lock\n  Esc Esc      literal Esc to a shell child\n\nThe engine ACTIONS a binding can name:\n  quit  focus-next  focus-prev  help  lock  unlock\n\nThis config also bound:\n  alt+n -> focus-next\n  alt+p -> focus-prev\n  alt+h -> help\n\nLock this pane (Enter) and scroll:\n  j / k    line    pgdn / pgup  page\n  g        top     Esc          release\n\nThe rounded border colour marks focus;\nit turns amber while LOCKED."
         }
       },
       {
@@ -28,7 +25,7 @@
             "size": "50%",
             "pane": {
               "type": "text",
-              "title": "pane 2  —  long text, scroll me",
+              "title": "pane 2  —  lock me, then scroll",
               "content": "01  Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n02  Sed do eiusmod tempor incididunt ut labore et dolore magna.\n03  Ut enim ad minim veniam, quis nostrud exercitation ullamco.\n04  Laboris nisi ut aliquip ex ea commodo consequat.\n05  Duis aute irure dolor in reprehenderit in voluptate velit.\n06  Esse cillum dolore eu fugiat nulla pariatur.\n07  Excepteur sint occaecat cupidatat non proident.\n08  Sunt in culpa qui officia deserunt mollit anim id est laborum.\n09  Curabitur pretium tincidunt lacus, nec gravida arcu.\n10  Nulla facilisi. Aenean nec eros a felis dictum tempus.\n11  Vestibulum ante ipsum primis in faucibus orci luctus.\n12  Et ultrices posuere cubilia curae; Donec velit neque.\n13  Auctor sit amet aliquam vel, ullamcorper sit amet ligula.\n14  Proin eget tortor risus. Vivamus magna justo.\n15  Lacinia eget consectetur sed, convallis at tellus.\n16  Pellentesque in ipsum id orci porta dapibus.\n17  Praesent sapien massa, convallis a pellentesque nec.\n18  Egestas non nisi. Mauris blandit aliquet elit.\n19  Eget tincidunt nibh pulvinar a. Nulla porttitor accumsan.\n20  Tincidunt. Donec sollicitudin molestie malesuada.\n21  Cras ultricies ligula sed magna dictum porta.\n22  Sed porttitor lectus nibh. Quisque velit nisi.\n23  Pretium ut, laoreet nec, imperdiet a, sapien.\n24  ---- end ----"
             }
           },
@@ -41,7 +38,7 @@
                 "pane": {
                   "type": "text",
                   "title": "pane 3",
-                  "content": "Focus cycles through panes in the order they appear in the layout tree:\n\n  1  how keys work\n  2  long text\n  3  this pane\n  4  live keys\n\nfocus-next past the last pane wraps to the first; focus-prev past the first wraps to the last."
+                  "content": "Focus cycles through panes in the order they appear in the layout tree:\n\n  1  how keys work\n  2  long text\n  3  this pane\n  4  live keys\n\nArrows pick the nearest pane in that direction; Tab just walks the ring and wraps at the ends."
                 }
               },
               {
@@ -49,7 +46,7 @@
                 "pane": {
                   "type": "command",
                   "title": "pane 4  —  your key map",
-                  "command": "printf '%s\\n' 'resolved bindings:' '' '  h  left  C-p   focus-prev' '  l  right C-n   focus-next' '  q  C-c         quit' '' 'everything else -> focused pane'"
+                  "command": "printf '%s\\n' 'resolved bindings:' '' '  arrows        move focus' '  Tab / S-Tab   cycle focus' '  Enter / Esc   lock / release' '  alt+n / alt+p focus next / prev' '  alt+h / F1    help' '  alt+q / C-c   quit'"
                 }
               }
             ]

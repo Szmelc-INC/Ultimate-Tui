@@ -175,7 +175,7 @@ func (s *shellWidget) View(width, height int) string {
 
 	screen := normalizeGrid(s.emu.Render(), width, height)
 	if s.exited {
-		return overlayLastLine(screen, "  "+s.note+"  —  press the prefix key, then a nav key  ", width)
+		return overlayLastLine(screen, "  "+s.note+"  —  press Esc to release, then an arrow key  ", width)
 	}
 	return screen
 }
