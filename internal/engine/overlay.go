@@ -128,14 +128,15 @@ func (m *Model) confirmMouseClick(row int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// confirmPanel is the centered dialog body.
+// confirmPanel is the centered dialog body. The two buttons are filled
+// "chips" (Padding is horizontal only — Padding(0, N) — so each button stays
+// exactly one row; confirmMouseClick maps row 2 to yes and row 3 to no by
+// fixed row number, and a vertical pad would silently break that mapping).
 func (m *Model) confirmPanel() string {
 	th := m.theme()
-	b := th.helpTitle.Render(m.confirmPrompt) + "\n\n" +
-		th.helpKey.Render("y") + th.helpDesc.Render(" / ") +
-		th.helpKey.Render("Enter") + th.helpDesc.Render("   confirm") + "\n" +
-		th.helpKey.Render("n") + th.helpDesc.Render(" / ") +
-		th.helpKey.Render("Esc") + th.helpDesc.Render("     cancel")
+	yes := th.chipPrimary.Render("Yes") + th.helpDim.Render("  y / Enter")
+	no := th.chipMuted.Render("Cancel") + th.helpDim.Render("  n / Esc")
+	b := th.helpTitle.Render(m.confirmPrompt) + "\n\n" + yes + "\n" + no
 	return th.helpBox.Render(b)
 }
 

@@ -194,6 +194,12 @@ type Model struct {
 	setRow        [2]int // cursor row per column
 	setSavedTheme string // theme/style active when the menu opened (Esc restores)
 	setSavedStyle string
+	// setCol0W is the theme column's rendered width, stamped by settingsPanel
+	// every render — settingsMouseClick uses it (plus panelContentOffsetX) as
+	// the exact column boundary instead of guessing ovW/2, so the color
+	// swatch settingsPanel prepends to each theme row can't throw off which
+	// column a click near the middle resolves to.
+	setCol0W int
 
 	rectW, rectH int // body size the leaf rectangles were computed at
 

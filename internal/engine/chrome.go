@@ -21,20 +21,23 @@ func (m *Model) statusBar(w int) string {
 	name := m.Focused()
 	left := mode + th.bar.Render("  "+name)
 
+	// Each hint key is its own small filled chip (chipMuted — see its doc
+	// comment) rather than plain colored text, so the bar reads as a row of
+	// distinct badges instead of a single flat strip.
 	var parts []string
 	if m.locked {
 		// Locked: Ctrl+C belongs to the pane, not the app.
 		parts = []string{
-			th.barKey.Render("esc") + th.bar.Render(" release"),
-			th.barKey.Render("F1") + th.bar.Render(" help"),
-			th.barKey.Render("^C") + th.bar.Render(" kill pane"),
+			th.chipMuted.Render("esc") + th.bar.Render(" release"),
+			th.chipMuted.Render("F1") + th.bar.Render(" help"),
+			th.chipMuted.Render("^C") + th.bar.Render(" kill pane"),
 		}
 	} else {
 		parts = []string{
-			th.barKey.Render("↑↓←→") + th.bar.Render(" focus"),
-			th.barKey.Render("enter") + th.bar.Render(" lock"),
-			th.barKey.Render("F1") + th.bar.Render(" help"),
-			th.barKey.Render("^C") + th.bar.Render(" quit"),
+			th.chipMuted.Render("↑↓←→") + th.bar.Render(" focus"),
+			th.chipMuted.Render("enter") + th.bar.Render(" lock"),
+			th.chipMuted.Render("F1") + th.bar.Render(" help"),
+			th.chipMuted.Render("^C") + th.bar.Render(" quit"),
 		}
 	}
 	hint := strings.Join(parts, th.bar.Render(th.sep))

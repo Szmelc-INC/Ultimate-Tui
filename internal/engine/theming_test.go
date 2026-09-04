@@ -70,6 +70,45 @@ func TestStatusBarWidthHoldsAcrossStylesets(t *testing.T) {
 	}
 }
 
+// TestOverlayAsciiStyleStaysPure7Bit extends TestStylesetChangesBorderRunes's
+// ascii-purity check to the overlays this session's chip/swatch work
+// touched (confirmPanel, controlPanel, settingsPanel) — TestStylesetChangesBorderRunes
+// only ever renders the bare pane tree via gridSrc, so it has never actually
+// exercised these panels under style=ascii. asciiBaseline is every non-ASCII
+// rune already present before that work (chrome.go's hardcoded status-bar
+// arrow hint, settings.go's "·" hint separator / "—" title dash / "▸" active-
+// column marker, control.go's "—" title dash) — none of them are styleset-
+// driven, so ascii doesn't (and structurally can't, via theme.go) suppress
+// them; anything beyond this set would mean the new chip/swatch code leaked
+// a fresh glyph into the one styleset that must stay pure 7-bit.
+func TestOverlayAsciiStyleStaysPure7Bit(t *testing.T) {
+	asciiBaseline := map[rune]bool{
+		'←': true, '↑': true, '→': true, '↓': true,
+		'·': true, '—': true, '▸': true,
+	}
+	check := func(name, frame string) {
+		t.Helper()
+		for _, r := range frame {
+			if r > 0x7f && !asciiBaseline[r] {
+				t.Fatalf("%s leaked non-ASCII rune %q (%U) under style=ascii:\n%s", name, r, r, frame)
+			}
+		}
+	}
+
+	m := styledModel(t, gridSrc, "auto", "ascii", 100, 30)
+	_ = m.View()
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}) // -> confirm-quit dialog
+	check("confirm dialog", u.(*engine.Model).View())
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2}) // -> control panel
+	m2 := u.(*engine.Model)
+	check("control panel", m2.View())
+
+	u, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter}) // "Theme & style" row -> settings panel
+	check("settings panel", u.(*engine.Model).View())
+}
+
 func TestNamedThemeRendersToExactSize(t *testing.T) {
 	for _, name := range engine.ThemeNames() {
 		m := styledModel(t, gridSrc, name, "rounded", 100, 30)

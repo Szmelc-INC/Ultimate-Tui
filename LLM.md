@@ -62,7 +62,14 @@ creack/pty, charmbracelet/x/{vt,ansi}. No plugin system by design.
   `indexOfPane`, `paneOf`), directional resize/swap/flip-split (resize.go),
   Split/Close/New-pane structural edits (split.go), mod+drag move/resize
   (drag.go), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
-  palettes + stylesets + memoized `theme` (theme.go), status bar + `splice()`/
+  palettes + stylesets + memoized `theme` (theme.go — each palette:
+  `subtle`/`accent`/`accent2`/`warn`/`success`/`text`/`barBg`/`modeFg` plus a
+  `surface`/`onSurface` muted fill+fg pair, all filled concretely in every
+  named palette, adaptive only in `auto`; `chipPrimary`/`chipMuted` are the
+  only two `theme` styles that set `Background`, not just `Foreground` — used
+  by the confirm dialog's Yes/Cancel buttons and the status bar's key-hint
+  badges, both `Padding(0,N)` horizontal-only since row *count* is
+  load-bearing there), status bar + `splice()`/
   `overlayGeometry` (chrome.go), overlay enum + F1 help + Ctrl+C confirm
   dialog + per-pane interrupt (overlay.go), mouse routing for every overlay
   (overlay_mouse.go), F2 control panel (control.go), F3 global
