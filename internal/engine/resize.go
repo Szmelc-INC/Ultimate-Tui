@@ -139,10 +139,26 @@ func resizePercents(chain []ancestorLink, upto, bw, bh int) []int {
 // resizeFocused grows the focused pane toward d's edge by resizeStep percent,
 // taking the space from the neighbor found by findResizeLink. A no-op if the
 // pane is already at that edge of the whole layout, or if the neighbor is
-// already at resizeFloor. Mutates Child.Size in place — render() re-parses
-// Size every frame, so no rebuild() is needed (the Children slice itself is
-// untouched, only its elements' Size strings change).
-func (m *Model) resizeFocused(d direction) {
+// already at resizeFloor. mod+arrow always grows (n=1) — see resizeFocusedBy
+// for the signed primitive mouse-drag needs.
+func (m *Model) resizeFocused(d direction) { m.resizeFocusedBy(d, 1) }
+
+// resizeFocusedBy is resizeFocused generalized to a signed step count: n>0
+// grows the focused pane toward d's edge (taking from the d-side neighbor,
+// same as resizeFocused); n<0 shrinks the focused pane from d's edge instead,
+// giving the freed space to that same neighbor — the same boundary moving
+// the same way, just described from the focused pane's other side. This is
+// what lets mouse-drag resize (drag.go) do something useful when the pane
+// grabbed has no neighbor to grow into on the dragged side but does have one
+// on the opposite side: shrinking that opposite edge moves a real boundary
+// in the direction the mouse moved, rather than silently refusing. mod+arrow
+// never shrinks (always n=1) so keyboard resize keeps its documented
+// grow-only semantics unchanged. Mutates Child.Size in place — render()
+// re-parses Size every frame, so no rebuild() is needed.
+func (m *Model) resizeFocusedBy(d direction, n int) {
+	if n == 0 {
+		return
+	}
 	lf := m.leaves[m.focus]
 	ci, nb, ok := findResizeLink(lf, d)
 	if !ok {
@@ -154,11 +170,18 @@ func (m *Model) resizeFocused(d direction) {
 		bw, bh = m.bodyDims()
 	}
 	pct := resizePercents(lf.chain, ci, bw, bh)
-	if pct[nb]-resizeStep < resizeFloor {
-		return
+	step := n * resizeStep
+	if step > 0 {
+		if pct[nb]-step < resizeFloor {
+			return
+		}
+	} else {
+		if pct[link.idx]+step < resizeFloor {
+			return
+		}
 	}
-	pct[link.idx] += resizeStep
-	pct[nb] -= resizeStep
+	pct[link.idx] += step
+	pct[nb] -= step
 	for i := range link.split.Children {
 		link.split.Children[i].Size = strconv.Itoa(pct[i]) + "%"
 	}

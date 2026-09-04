@@ -192,8 +192,12 @@ On by default, everywhere — the pane tree *and* every overlay.
   **wheel** scrolls the pane under the cursor without moving focus.
 - **`mod`+left-drag** grabs the pane under the cursor and, on release, swaps it
   with whatever pane it's dropped on. **`mod`+right-drag** grabs it to resize —
-  drag toward an edge to grow the pane that way, live as you drag. Holding
-  `mod` while right-clicking resizes instead of opening the context menu.
+  from anywhere on the pane, drag any direction to resize that way, live as
+  you drag: it grows the pane toward the edge you're dragging when there's a
+  neighbor to grow into, and shrinks it from the opposite edge otherwise, so
+  a pane flush against one side of the layout still resizes when dragged
+  toward that side. Holding `mod` while right-clicking resizes instead of
+  opening the context menu.
 - **Inside any open overlay** (help, a confirm dialog, the context menu, F2,
   F3, the theme/style picker, the split prompt, the pane/config editor):
   clicking a row selects it (a menu row like Close or Restart runs

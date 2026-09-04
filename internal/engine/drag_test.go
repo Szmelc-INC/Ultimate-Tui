@@ -42,7 +42,11 @@ func TestDragResizeGrowsTowardCursor(t *testing.T) {
 		t.Fatalf("drag should focus the grabbed pane, focus=%d", m.focus)
 	}
 
-	m = motion(m, startX+dragCellsPerStep*3, startY) // 3 resize steps rightward
+	// 3 resize steps rightward, split across two motion events so neither
+	// exceeds dragMaxStepsPerEvent — a single event carrying all 3 steps'
+	// worth of cells would only apply 2 (see TestDragResizeCapsStepsPerEvent).
+	m = motion(m, startX+dragCellsPerStep*2, startY)
+	m = motion(m, startX+dragCellsPerStep*3, startY)
 
 	row := m.root.children[0].node
 	if got := row.children[0].cfg.Size; got != "65%" {
@@ -52,6 +56,82 @@ func TestDragResizeGrowsTowardCursor(t *testing.T) {
 	m = release(m, startX+dragCellsPerStep*3, startY)
 	if m.dragMode != dragNone {
 		t.Fatal("release did not end the drag")
+	}
+}
+
+// A single motion event carrying enough raw cursor movement for several
+// resize steps must apply at most dragMaxStepsPerEvent of them — a fast
+// drag arrives as a few coalesced events with large deltas, not many events
+// with dx=1, and dragCellsPerStep alone can't cap that. The unconsumed
+// movement isn't discarded: a follow-up motion at the same absolute
+// position keeps applying steps rather than needing to "catch up" from the
+// clamped position.
+func TestDragResizeCapsStepsPerEvent(t *testing.T) {
+	m := mkModel(t, resizeGridSrc)
+	_ = m.View()
+	tl := m.leaves[0]
+	startX, startY := tl.x+2, tl.y+2
+	row := m.root.children[0].node
+
+	m = altPress(m, startX, startY, true)
+	m = motion(m, startX+dragCellsPerStep*10, startY) // way more than the cap
+	if got := row.children[0].cfg.Size; got != "60%" {
+		t.Fatalf("TL size after one oversized motion = %q, want 60%% (capped at %d steps)", got, dragMaxStepsPerEvent)
+	}
+
+	// A second motion at the same position: the leftover movement from the
+	// first event was not discarded, so this keeps applying steps.
+	m = motion(m, startX+dragCellsPerStep*10, startY)
+	if got := row.children[0].cfg.Size; got != "70%" {
+		t.Fatalf("TL size after the follow-up motion = %q, want 70%% (2 more steps consumed from leftover movement)", got)
+	}
+}
+
+// Dragging further toward a pane's flush edge (no neighbor to grow into
+// there) must not silently no-op: it falls back to shrinking the pane's
+// opposite edge instead, moving a real boundary the same raw direction —
+// see dragResizeAxis. TR is flush against the right edge of the whole
+// layout, so dragging right on TR shrinks TR from its left edge, growing TL.
+func TestDragResizeFallsBackToOppositeEdgeAtLayoutBoundary(t *testing.T) {
+	m := mkModel(t, resizeGridSrc)
+	_ = m.View()
+
+	tr := m.leaves[1] // TR, top-right of the 2x2 grid
+	startX, startY := tr.x+2, tr.y+2
+
+	m = altPress(m, startX, startY, true)
+	if m.focus != 1 {
+		t.Fatalf("drag should focus TR, focus=%d", m.focus)
+	}
+	if m.dragLinked(dirRight) {
+		t.Fatal("precondition: TR should have no right neighbor (flush against the layout edge)")
+	}
+
+	// 3 steps rightward, split across two events — see
+	// TestDragResizeCapsStepsPerEvent for why one event can't carry all 3.
+	m = motion(m, startX+dragCellsPerStep*2, startY)
+	m = motion(m, startX+dragCellsPerStep*3, startY)
+
+	row := m.root.children[0].node
+	if got := row.children[0].cfg.Size; got != "65%" {
+		t.Fatalf("TL size after dragging TR rightward = %q, want 65%% (grew via TR's fallback shrink)", got)
+	}
+	if got := row.children[1].cfg.Size; got != "35%" {
+		t.Fatalf("TR size after dragging TR rightward = %q, want 35%%", got)
+	}
+}
+
+// A pane with no neighbor at all on the dragged axis (nothing to grow into,
+// nothing to shrink into either) is a genuine dead end — still a no-op.
+func TestDragResizeNoopWhenAxisHasNoNeighborAtAll(t *testing.T) {
+	m := mkModel(t, oneText) // single root pane, no splits anywhere
+	_ = m.View()
+
+	before := m.View()
+	m = altPress(m, 2, 2, true)
+	m = motion(m, 2+dragCellsPerStep*3, 2)
+	if m.View() != before {
+		t.Fatal("dragging the sole pane should change nothing — there is no neighbor on any axis")
 	}
 }
 

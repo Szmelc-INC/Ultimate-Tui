@@ -132,6 +132,42 @@ func TestResizeRefusesPastFloor(t *testing.T) {
 	}
 }
 
+// resizeFocusedBy(d, -1) shrinks the focused pane from d's edge, giving the
+// freed space to the same neighbor resizeFocused(d) would take from — the
+// primitive mouse-drag's fallback-shrink relies on (see drag_test.go).
+func TestResizeFocusedByNegativeShrinksFocusedGrowsNeighbor(t *testing.T) {
+	m := mkModel(t, resizeGridSrc)
+	_ = m.View()
+	if m.Focused() != "TL" {
+		t.Fatalf("start focus = %q", m.Focused())
+	}
+
+	m.resizeFocusedBy(dirRight, -1)
+
+	row := m.root.children[0].node
+	if got := row.children[0].cfg.Size; got != "45%" {
+		t.Fatalf("TL size = %q, want 45%% (shrunk)", got)
+	}
+	if got := row.children[1].cfg.Size; got != "55%" {
+		t.Fatalf("TR size = %q, want 55%% (grew)", got)
+	}
+}
+
+// Shrinking refuses once the focused pane itself would drop below
+// resizeFloor — the mirror of TestResizeRefusesPastFloor for the other side.
+func TestResizeFocusedByNegativeRefusesPastFloor(t *testing.T) {
+	m := mkModel(t, resizeGridSrc)
+	_ = m.View()
+	row := m.root.children[0].node
+	row.children[0].cfg.Size = "5%" // TL already at the floor
+	row.children[1].cfg.Size = "95%"
+
+	m.resizeFocusedBy(dirRight, -1)
+	if got := row.children[0].cfg.Size; got != "5%" {
+		t.Fatalf("shrink pushed the focused pane past the floor: %q", got)
+	}
+}
+
 // mod+shift+right swaps the focused pane with its right neighbor; content
 // (titles) trade places, pane count is unchanged, and focus follows the
 // swapped pane's identity.

@@ -23,8 +23,22 @@ const (
 
 // dragCellsPerStep is how many cells of mouse movement one resizeStep (see
 // resize.go) costs while dragging — coarser than 1:1 so a drag resize feels
-// deliberate rather than twitchy.
-const dragCellsPerStep = 2
+// deliberate rather than twitchy. 2 (1 resizeStep == 2.5% per cell) proved
+// too sensitive in practice — a routine drag across a terminal pane blew
+// through the whole layout in a handful of cells; 5 (1% per cell) leaves
+// room for fine control over a normal-width pane without needing a
+// deliberately slow drag.
+const dragCellsPerStep = 5
+
+// dragMaxStepsPerEvent caps how many resize steps a single motion event can
+// apply. Terminals coalesce mouse motion during a fast drag into a few
+// events with large deltas rather than many events with small ones —
+// dragCellsPerStep alone doesn't help there, since one event can still carry
+// enough cells for a double-digit percent swing. Unconsumed movement is not
+// discarded (dragLastX/Y only advances by what was actually applied), so a
+// fast drag still tracks the cursor smoothly across several events instead
+// of jumping once and then lagging.
+const dragMaxStepsPerEvent = 2
 
 func (m *Model) handleDragMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch {
@@ -55,27 +69,58 @@ func (m *Model) handleDragMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 // dragResizeStep converts however much the cursor has moved since the last
-// consumed position into whole resizeFocused() calls (fractional movement
-// carries over to the next event), reusing mod+arrow's exact grow-toward-
-// that-edge, take-from-the-neighbor logic — a drag is just many small
-// directional resizes.
+// consumed position into whole resize steps (fractional movement carries
+// over to the next event) — a drag is just many small directional resizes,
+// one per axis per dragCellsPerStep of movement.
 func (m *Model) dragResizeStep(x, y int) {
 	dx, dy := x-m.dragLastX, y-m.dragLastY
 	sx, sy := dx/dragCellsPerStep, dy/dragCellsPerStep
+	sx = clampInt(sx, -dragMaxStepsPerEvent, dragMaxStepsPerEvent)
+	sy = clampInt(sy, -dragMaxStepsPerEvent, dragMaxStepsPerEvent)
 	for n := sx; n > 0; n-- {
-		m.resizeFocused(dirRight)
+		m.dragResizeAxis(dirRight, dirLeft)
 	}
 	for n := sx; n < 0; n++ {
-		m.resizeFocused(dirLeft)
+		m.dragResizeAxis(dirLeft, dirRight)
 	}
 	for n := sy; n > 0; n-- {
-		m.resizeFocused(dirDown)
+		m.dragResizeAxis(dirDown, dirUp)
 	}
 	for n := sy; n < 0; n++ {
-		m.resizeFocused(dirUp)
+		m.dragResizeAxis(dirUp, dirDown)
 	}
 	m.dragLastX += sx * dragCellsPerStep
 	m.dragLastY += sy * dragCellsPerStep
+}
+
+// dragResizeAxis applies one drag-resize step toward growDir — the raw
+// screen direction the cursor just moved. Unlike mod+arrow (always grows,
+// see resize.go), a drag is grabbed at an arbitrary point on the pane, not
+// necessarily its growDir edge: if the focused pane has no neighbor to grow
+// into on growDir's side (flush against that side of the whole layout), that
+// is not the end of what "drag this way" can mean — shrinking the pane from
+// its *opposite* edge moves that boundary the same raw direction, just as
+// seen from the other side, so it's tried as a fallback. Only a genuine dead
+// end — no neighbor anywhere on that axis — is a no-op. This is what makes
+// grabbing a pane anywhere and dragging any direction always resize
+// *something* when the layout has room to give, rather than only working
+// when the grab happened to land on the "correct" half of the pane.
+func (m *Model) dragResizeAxis(growDir, shrinkFallbackDir direction) {
+	if m.dragLinked(growDir) {
+		m.resizeFocusedBy(growDir, 1)
+		return
+	}
+	if m.dragLinked(shrinkFallbackDir) {
+		m.resizeFocusedBy(shrinkFallbackDir, -1)
+	}
+}
+
+// dragLinked reports whether direction d has a neighbor for the focused pane
+// to resize against at all (ignoring the resizeFloor — that's a separate,
+// legitimate refusal resizeFocusedBy already makes).
+func (m *Model) dragLinked(d direction) bool {
+	_, _, ok := findResizeLink(m.leaves[m.focus], d)
+	return ok
 }
 
 // dragRelease ends the drag. A resize just stops (every step already

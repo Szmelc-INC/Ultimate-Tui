@@ -154,8 +154,11 @@ layout. `m.ovX/Y/W/H` = the active overlay panel's bounding box, stamped by
     msg.Alt` → `handleDragMouse` (drag.go) FIRST, preempting everything below
     (this is how holding mod disables the plain right-click menu) — press
     starts `dragMove`/`dragResize` on the leaf under the cursor and focuses
-    it, `dragResize` motion calls `resizeFocused` live per `dragCellsPerStep`
-    cells moved, release either ends a resize or (`dragMove`) swaps
+    it, `dragResize` motion calls `dragResizeAxis` (growDir first, falls back
+    to shrinking the opposite edge if growDir has no neighbor —
+    `resizeFocusedBy` in resize.go, the signed generalization of
+    `resizeFocused`) live per `dragCellsPerStep` cells moved, release either
+    ends a resize or (`dragMove`) swaps
     `nodeOfLeaf(from).Pane` with `nodeOfLeaf(to).Pane` and `rebuild()`s. Non-
     drag: no-op unless `rectW/rectH == bodyDims()`. Right press → `openContext
     (leafAt)` (`-1` for dead space → the New-pane menu; target captured, focus
