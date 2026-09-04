@@ -4,6 +4,8 @@ import (
 	"sort"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/silverx/ultimate-tui/internal/widget"
 )
 
 // theme is the fully-resolved palette + styleset for one run: concrete colours,
@@ -38,6 +40,11 @@ type theme struct {
 	menuSel    lipgloss.Style
 	menuItem   lipgloss.Style
 	menuColHdr lipgloss.Style
+
+	// widgetStyles is pushed into every leaf's widget each frame (renderLeaf)
+	// via widget.Styler, so list/form/input content is colored from the same
+	// resolved palette as the chrome around it — see widget/styles.go.
+	widgetStyles widget.Styles
 }
 
 // palette is the semantic colour set a named theme provides. Named themes use
@@ -48,6 +55,7 @@ type palette struct {
 	accent  lipgloss.TerminalColor
 	accent2 lipgloss.TerminalColor
 	warn    lipgloss.TerminalColor
+	success lipgloss.TerminalColor
 	text    lipgloss.TerminalColor
 	barBg   lipgloss.TerminalColor
 	modeFg  lipgloss.TerminalColor // text drawn on the accent-coloured mode chip
@@ -76,6 +84,7 @@ var palettes = map[string]palette{
 		accent:  lipgloss.AdaptiveColor{Light: "#6C4CE0", Dark: "#B4A0FF"},
 		accent2: lipgloss.AdaptiveColor{Light: "#0B7285", Dark: "#63D2E0"},
 		warn:    lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#F2A65A"},
+		success: lipgloss.AdaptiveColor{Light: "#2F9E44", Dark: "#8CE99A"},
 		text:    lipgloss.AdaptiveColor{Light: "#1F2328", Dark: "#E6E6E6"},
 		barBg:   lipgloss.AdaptiveColor{Light: "#ECECFF", Dark: "#2A2740"},
 		modeFg:  lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"},
@@ -85,6 +94,7 @@ var palettes = map[string]palette{
 		accent:  lipgloss.Color("#7aa2f7"),
 		accent2: lipgloss.Color("#7dcfff"),
 		warn:    lipgloss.Color("#ff9e64"),
+		success: lipgloss.Color("#9ece6a"),
 		text:    lipgloss.Color("#c0caf5"),
 		barBg:   lipgloss.Color("#24283b"),
 		modeFg:  lipgloss.Color("#1a1b26"),
@@ -94,6 +104,7 @@ var palettes = map[string]palette{
 		accent:  lipgloss.Color("#fabd2f"),
 		accent2: lipgloss.Color("#8ec07c"),
 		warn:    lipgloss.Color("#fe8019"),
+		success: lipgloss.Color("#b8bb26"),
 		text:    lipgloss.Color("#ebdbb2"),
 		barBg:   lipgloss.Color("#3c3836"),
 		modeFg:  lipgloss.Color("#282828"),
@@ -103,6 +114,7 @@ var palettes = map[string]palette{
 		accent:  lipgloss.Color("#38bdf8"),
 		accent2: lipgloss.Color("#2dd4bf"),
 		warn:    lipgloss.Color("#fb7185"),
+		success: lipgloss.Color("#34d399"),
 		text:    lipgloss.Color("#e2e8f0"),
 		barBg:   lipgloss.Color("#1e293b"),
 		modeFg:  lipgloss.Color("#0f172a"),
@@ -112,6 +124,7 @@ var palettes = map[string]palette{
 		accent:  lipgloss.Color("#8b5cf6"),
 		accent2: lipgloss.Color("#22d3ee"),
 		warn:    lipgloss.Color("#f472b6"),
+		success: lipgloss.Color("#4ade80"),
 		text:    lipgloss.Color("#e5e7eb"),
 		barBg:   lipgloss.Color("#14142b"),
 		modeFg:  lipgloss.Color("#0a0a1a"),
@@ -276,6 +289,16 @@ func buildTheme(themeName, styleName string) theme {
 	t.menuColHdr = lipgloss.NewStyle().Bold(true).Foreground(pal.accent2)
 	t.menuItem = lipgloss.NewStyle().Foreground(pal.text)
 	t.menuSel = lipgloss.NewStyle().Bold(true).Foreground(pal.modeFg).Background(pal.accent)
+
+	t.widgetStyles = widget.Styles{
+		Accent:  pal.accent,
+		Accent2: pal.accent2,
+		Text:    pal.text,
+		Subtle:  pal.subtle,
+		Warn:    pal.warn,
+		Success: pal.success,
+		ModeFg:  pal.modeFg,
+	}
 
 	return t
 }

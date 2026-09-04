@@ -815,6 +815,14 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 
 	focused := m.leaves[m.focus] == lf
 
+	// Push the resolved theme's colors into the widget every frame, mirroring
+	// how list.SetSize / form.WithWidth / textinput.Width are already set in
+	// View rather than from a one-time message — so a live theme-picker
+	// preview (F2/F3, invalidateTheme) recolors every widget with no rebuild.
+	if s, ok := lf.w.(widget.Styler); ok {
+		s.SetStyles(th.widgetStyles)
+	}
+
 	bodyH := innerH
 	var head string
 	title := lf.title

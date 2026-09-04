@@ -33,6 +33,9 @@ type shellWidget struct {
 	w, h   int
 	exited bool
 	note   string // shown before first paint / after exit
+
+	styles    Styles
+	stylesSet bool
 }
 
 func newShell(p *config.Pane) (Widget, error) {
@@ -211,9 +214,24 @@ func (s *shellWidget) View(width, height int) string {
 
 	screen := normalizeGrid(s.emu.Render(), width, height)
 	if s.exited {
-		return overlayLastLine(screen, "  "+s.note+"  —  press Esc to release, then an arrow key  ", width)
+		var fg, bg lipgloss.TerminalColor = lipgloss.Color("231"), lipgloss.Color("196") // fallback before the first SetStyles push
+		if s.stylesSet {
+			fg, bg = s.styles.ModeFg, s.styles.Warn
+		}
+		return overlayLastLine(screen, "  "+s.note+"  —  press Esc to release, then an arrow key  ", width, fg, bg)
 	}
 	return screen
+}
+
+// SetStyles implements widget.Styler: colors the "process exited" bar from
+// the resolved theme's warn/modeFg (the same pair renderLeaf uses for a
+// locked pane's border) instead of a hardcoded red/white — the one
+// hardcoded-color exception theme.go's doc comment used to call out is
+// pinned to those two fields (types differ: lipgloss.Color vs.
+// lipgloss.TerminalColor) rather than gone outright, since this package
+// still can't import engine's theme.go (see CLAUDE.md).
+func (s *shellWidget) SetStyles(st Styles) {
+	s.styles, s.stylesSet = st, true
 }
 
 // normalizeGrid forces the emulator's Render() output to exactly h lines of w
@@ -243,13 +261,13 @@ func fitBox(text string, w, h int) string {
 	return lipgloss.NewStyle().Width(w).Height(h).MaxWidth(w).MaxHeight(h).Render(text)
 }
 
-func overlayLastLine(grid, msg string, w int) string {
+func overlayLastLine(grid, msg string, w int, fg, bg lipgloss.TerminalColor) string {
 	lines := strings.Split(grid, "\n")
 	if len(lines) == 0 {
 		return grid
 	}
 	bar := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("231")).Background(lipgloss.Color("196")).
+		Foreground(fg).Background(bg).
 		Width(w).MaxWidth(w).Render(ansi.Truncate(msg, w, ""))
 	lines[len(lines)-1] = bar
 	return strings.Join(lines, "\n")

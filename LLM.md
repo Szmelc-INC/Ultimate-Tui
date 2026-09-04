@@ -44,7 +44,18 @@ creack/pty, charmbracelet/x/{vt,ansi}. No plugin system by design.
   note), `StreamMsg` (endless read-loop msg marker), `ScrollProgress`
   (`ScrollFraction() float64` 0..1 → engine appends `NN%` to the pane title),
   `Zoomer` (`SetZoom(level int)` — per-pane content scale, `mod+=/-/0`; `text`
-  implements it via `bigfont.go`'s 3x5 block-glyph font, nothing else does).
+  implements it via `bigfont.go`'s 3x5 block-glyph font, nothing else does),
+  `Styler` (`SetStyles(widget.Styles)` — resolved theme colors, pushed every
+  frame by `renderLeaf` before `View`, same idiom as size above but for
+  color; `widget.Styles`/`Styler` live in `widget` since it can't import
+  `engine`'s theme.go; `list`/`input`/`form`/`shell` implement it — `list`
+  recolors bubbles/list's default pink delegate + filter/pagination styles,
+  `input` recolors textinput's prompt/text/placeholder/cursor, `form` builds
+  a `*huh.Theme` from `huh.ThemeBase()` applied via `WithTheme` in `View`,
+  `shell` recolors its "process exited" bar (formerly hardcoded red/white,
+  now `Warn`/`ModeFg` with that hardcode kept only as the pre-first-frame
+  fallback); `text`/`command`/`markdown` don't implement it — that's user
+  content, not chrome).
 - `internal/engine` — `sizeSpec`/`parseSize`/`distribute` (layout.go), `Model`
   (bubbletea root, engine.go: focus-lock state machine + directional focus +
   mouse hit-test), identity-preserving tree rebuild (rebuild.go: `rebuild()`,

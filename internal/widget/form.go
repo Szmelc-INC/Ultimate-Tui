@@ -30,6 +30,15 @@ type formWidget struct {
 	keys      []string // field keys, in declared order, for a stable summary
 	values    map[string]*string
 	bools     map[string]*bool
+
+	styleKey     string
+	theme        *huh.Theme
+	themeApplied bool // reset by build() so a freshly (re)built *huh.Form always gets w.theme reapplied
+
+	// summaryStyles mirrors the colors last pushed via SetStyles, for the
+	// post-submission summary (summary) to render with — kept separately
+	// from theme/styleKey since it's plain data, not a cached huh.Theme.
+	summaryStyles Styles
 }
 
 func newForm(p *config.Pane) (Widget, error) {
@@ -90,6 +99,7 @@ func (w *formWidget) build() error {
 		w.keys = append(w.keys, f.Key)
 	}
 	w.form = huh.NewForm(huh.NewGroup(fields...)).WithShowHelp(false)
+	w.themeApplied = false // a fresh *huh.Form carries huh's stock theme until View reapplies w.theme
 	return nil
 }
 
@@ -109,6 +119,15 @@ func (w *formWidget) Update(msg tea.Msg) (Widget, tea.Cmd) {
 // whole layout tree instead), so WithWidth/WithHeight stand in for it here,
 // the same way listWidget.View calls list.Model.SetSize every render.
 func (w *formWidget) View(width, height int) string {
+	if w.theme != nil && !w.themeApplied {
+		// WithTheme's cost is propagating the theme to every field in every
+		// group, not building it — so, unlike WithWidth/WithHeight (which
+		// really do need to run every frame; see the doc comment there),
+		// this only needs to happen once per rebuilt *huh.Form or changed
+		// theme, tracked by themeApplied.
+		w.form = w.form.WithTheme(w.theme)
+		w.themeApplied = true
+	}
 	if width > 0 && height > 0 {
 		w.form = w.form.WithWidth(width).WithHeight(height)
 	}
@@ -118,18 +137,81 @@ func (w *formWidget) View(width, height int) string {
 	return w.form.View()
 }
 
+// SetStyles implements widget.Styler: builds (and caches) a *huh.Theme from
+// the resolved palette. Guarded by styleKey so a frame where the theme
+// hasn't changed doesn't reallocate the dozens of lipgloss.Style values a
+// fresh huh.Theme carries — View applies the cached theme via themeApplied.
+func (w *formWidget) SetStyles(s Styles) {
+	w.summaryStyles = s
+	key := s.key()
+	if key == w.styleKey && w.theme != nil {
+		return
+	}
+	w.styleKey = key
+	w.theme = huhTheme(s)
+	w.themeApplied = false
+}
+
+// huhTheme builds a huh.Theme from the resolved app palette, starting from
+// huh.ThemeBase() (structure/spacing only, no color) and recoloring exactly
+// the fields ThemeBase leaves at huh's own defaults, so the form matches the
+// pane chrome around it instead of huh's stock palette.
+func huhTheme(s Styles) *huh.Theme {
+	t := huh.ThemeBase()
+
+	t.Focused.Base = t.Focused.Base.BorderForeground(s.Accent)
+	t.Focused.Title = t.Focused.Title.Foreground(s.Accent).Bold(true)
+	t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(s.Accent).Bold(true)
+	t.Focused.Description = t.Focused.Description.Foreground(s.Subtle)
+	t.Focused.ErrorIndicator = t.Focused.ErrorIndicator.Foreground(s.Warn)
+	t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(s.Warn)
+	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(s.Accent)
+	t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(s.Accent)
+	t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(s.Accent)
+	t.Focused.Option = t.Focused.Option.Foreground(s.Text)
+	t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(s.Accent)
+	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(s.Success)
+	// Recolor only — keep ThemeBase's own (currently unset, so effectively
+	// huh's multi-select default) glyphs rather than introducing a new one:
+	// widget.Styles carries colors only, not the styleset half that keeps
+	// `style=ascii` pure 7-bit (see theme.go's stylesets registry), so a
+	// widget has no way to know it should fall back to an ASCII glyph here.
+	t.Focused.SelectedPrefix = t.Focused.SelectedPrefix.Foreground(s.Success)
+	t.Focused.UnselectedPrefix = t.Focused.UnselectedPrefix.Foreground(s.Subtle)
+	t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(s.Text)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(s.ModeFg).Background(s.Accent)
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(s.Text).Background(lipgloss.NoColor{})
+	t.Focused.Next = t.Focused.FocusedButton
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(s.Accent)
+	t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(s.Subtle)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(s.Accent2)
+	t.Focused.TextInput.Text = t.Focused.TextInput.Text.Foreground(s.Text)
+
+	t.Blurred = t.Focused
+	t.Blurred.Base = t.Focused.Base.BorderStyle(lipgloss.HiddenBorder())
+	t.Blurred.NextIndicator = lipgloss.NewStyle()
+	t.Blurred.PrevIndicator = lipgloss.NewStyle()
+	t.Blurred.Title = t.Blurred.Title.Foreground(s.Subtle)
+
+	return t
+}
+
 func (w *formWidget) summary(width, height int) string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(w.summaryStyles.Success)
+	dim := lipgloss.NewStyle().Foreground(w.summaryStyles.Subtle)
+	key := lipgloss.NewStyle().Foreground(w.summaryStyles.Accent2)
+
 	var b strings.Builder
-	b.WriteString("submitted:\n\n")
+	b.WriteString(title.Render("submitted:") + "\n\n")
 	for _, k := range w.keys {
 		switch {
 		case w.values[k] != nil:
-			fmt.Fprintf(&b, "%s: %s\n", k, *w.values[k])
+			fmt.Fprintf(&b, "%s: %s\n", key.Render(k), *w.values[k])
 		case w.bools[k] != nil:
-			fmt.Fprintf(&b, "%s: %v\n", k, *w.bools[k])
+			fmt.Fprintf(&b, "%s: %v\n", key.Render(k), *w.bools[k])
 		}
 	}
-	b.WriteString("\n(context menu -> Restart for a blank form)")
+	b.WriteString("\n" + dim.Render("(context menu -> Restart for a blank form)"))
 	return lipgloss.NewStyle().Width(width).Height(height).Render(b.String())
 }
 

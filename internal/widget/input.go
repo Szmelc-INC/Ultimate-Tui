@@ -19,7 +19,8 @@ func init() { Register("input", newInput) }
 // "total modularity" goal) — this is the building block a later
 // command-templating or form-submission feature would read from.
 type inputWidget struct {
-	ti textinput.Model
+	ti       textinput.Model
+	styleKey string
 }
 
 func newInput(p *config.Pane) (Widget, error) {
@@ -50,4 +51,20 @@ func (w *inputWidget) View(width, height int) string {
 		w.ti.Width = pw // textinput.Width is the visible viewport, excluding the prompt drawn alongside it
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).Render(w.ti.View())
+}
+
+// SetStyles implements widget.Styler: colors the cursor, typed text and
+// placeholder from the resolved theme instead of textinput's plain default.
+func (w *inputWidget) SetStyles(s Styles) {
+	key := s.key()
+	if key == w.styleKey {
+		return
+	}
+	w.styleKey = key
+
+	w.ti.PromptStyle = lipgloss.NewStyle().Foreground(s.Accent2)
+	w.ti.TextStyle = lipgloss.NewStyle().Foreground(s.Text)
+	w.ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(s.Subtle)
+	w.ti.CompletionStyle = lipgloss.NewStyle().Foreground(s.Subtle)
+	w.ti.Cursor.Style = lipgloss.NewStyle().Foreground(s.Accent)
 }

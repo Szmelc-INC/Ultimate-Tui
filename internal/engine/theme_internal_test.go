@@ -54,3 +54,30 @@ func TestBuildThemeResolvesPaletteAndStyleset(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildThemeFillsWidgetStyles pins buildTheme's half of the theme ->
+// widget.Styler pipeline: every named palette must actually populate
+// widgetStyles (not the zero value), and two different palettes must
+// resolve to different colors. The other half — that renderLeaf actually
+// pushes it into a widget every frame — is styler_probe_test.go, since that
+// needs a live widget instance, not just buildTheme's return value.
+func TestBuildThemeFillsWidgetStyles(t *testing.T) {
+	gv := buildTheme("gruvbox", "rounded")
+	if c, ok := gv.widgetStyles.Accent.(lipgloss.Color); !ok || string(c) != "#fabd2f" {
+		t.Fatalf("gruvbox widgetStyles.Accent = %#v, want lipgloss.Color(#fabd2f)", gv.widgetStyles.Accent)
+	}
+	if c, ok := gv.widgetStyles.Success.(lipgloss.Color); !ok || string(c) != "#b8bb26" {
+		t.Fatalf("gruvbox widgetStyles.Success = %#v, want lipgloss.Color(#b8bb26)", gv.widgetStyles.Success)
+	}
+
+	sl := buildTheme("slate", "rounded")
+	if gv.widgetStyles.Accent == sl.widgetStyles.Accent {
+		t.Fatal("widgetStyles.Accent identical for gruvbox and slate")
+	}
+
+	// auto stays adaptive here too, same rule as borderFocus above.
+	au := buildTheme("auto", "rounded")
+	if _, ok := au.widgetStyles.Accent.(lipgloss.AdaptiveColor); !ok {
+		t.Fatalf("auto widgetStyles.Accent = %#v, want AdaptiveColor", au.widgetStyles.Accent)
+	}
+}

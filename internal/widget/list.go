@@ -3,6 +3,7 @@ package widget
 import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/silverx/ultimate-tui/internal/config"
 )
@@ -21,7 +22,8 @@ func (i listItem) FilterValue() string { return string(i) }
 // bubbles/list — it already owns scrolling, pagination and "/"-filtering, so
 // there is nothing for the shared scrollBox (scroll.go) to add.
 type listWidget struct {
-	l list.Model
+	l        list.Model
+	styleKey string
 }
 
 func newList(p *config.Pane) (Widget, error) {
@@ -56,4 +58,40 @@ func (w *listWidget) Update(msg tea.Msg) (Widget, tea.Cmd) {
 func (w *listWidget) View(width, height int) string {
 	w.l.SetSize(width, height)
 	return w.l.View()
+}
+
+// SetStyles implements widget.Styler: recolors the selected/normal/dimmed
+// item rows and the filter/pagination affordances from the resolved theme,
+// replacing bubbles/list's charm-pink default — the single most obviously
+// off-theme element in the app before this. Mirrors the shape of
+// list.NewDefaultItemStyles / list.DefaultStyles, just re-colored.
+func (w *listWidget) SetStyles(s Styles) {
+	key := s.key()
+	if key == w.styleKey {
+		return // pushed every frame (renderLeaf) — skip the rebuild when the theme hasn't changed
+	}
+	w.styleKey = key
+
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = false
+	d.Styles.SelectedTitle = lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(s.Accent).
+		Foreground(s.Accent).
+		Bold(true).
+		Padding(0, 0, 0, 1)
+	d.Styles.SelectedDesc = d.Styles.SelectedTitle.Foreground(s.Accent)
+	d.Styles.NormalTitle = lipgloss.NewStyle().Foreground(s.Text).Padding(0, 0, 0, 2)
+	d.Styles.NormalDesc = d.Styles.NormalTitle.Foreground(s.Subtle)
+	d.Styles.DimmedTitle = lipgloss.NewStyle().Foreground(s.Subtle).Padding(0, 0, 0, 2)
+	d.Styles.DimmedDesc = d.Styles.DimmedTitle
+	d.Styles.FilterMatch = lipgloss.NewStyle().Foreground(s.Accent2).Underline(true)
+	w.l.SetDelegate(d)
+
+	w.l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(s.Accent2)
+	w.l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(s.Accent2)
+	w.l.Styles.NoItems = lipgloss.NewStyle().Foreground(s.Subtle)
+	w.l.Styles.PaginationStyle = lipgloss.NewStyle().Foreground(s.Subtle).PaddingLeft(2)
+	w.l.Styles.ActivePaginationDot = lipgloss.NewStyle().Foreground(s.Accent).SetString("•")
+	w.l.Styles.InactivePaginationDot = lipgloss.NewStyle().Foreground(s.Subtle).SetString("•")
 }
