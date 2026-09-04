@@ -79,6 +79,13 @@ type leaf struct {
 	border bool
 	w      widget.Widget
 
+	// pane points at the live config node this leaf was built from, and parent
+	// at the enclosing split slot (nil for the root leaf). The editor overlay
+	// reads current values through these and mutates them in place; nothing
+	// else in the engine writes to them.
+	pane   *config.Pane
+	parent *config.Child
+
 	// zoom is a per-pane size bias in steps: positive grows this pane at its
 	// siblings' expense in every ancestor split, negative shrinks it. Applied
 	// as a sum-preserving post-pass in render() (see shiftZoom).
@@ -124,6 +131,8 @@ type Model struct {
 	setSavedStyle string
 
 	rectW, rectH int // body size the leaf rectangles were computed at
+
+	cfg *config.Config // the config this Model was built from (editor target)
 }
 
 // New builds a Model from config with the default runner options.
@@ -143,6 +152,7 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 		mod:       opts.Mod,
 		themeName: resolveThemeName(opts.Theme),
 		styleName: resolveStyleName(opts.Style),
+		cfg:       cfg,
 	}
 
 	put := func(src map[string]string) {
@@ -155,7 +165,7 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 	put(cfg.Keybindings)
 	m.tuiKeys = cfg.Keybindings
 
-	root, err := m.build(&cfg.Layout, "layout")
+	root, err := m.build(&cfg.Layout, nil, "layout")
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +184,7 @@ func expandMod(key, mod string) string {
 	return key
 }
 
-func (m *Model) build(n *config.Node, path string) (node, error) {
+func (m *Model) build(n *config.Node, parent *config.Child, path string) (node, error) {
 	if n.Pane != nil {
 		w, err := widget.New(n.Pane)
 		if err != nil {
@@ -184,6 +194,8 @@ func (m *Model) build(n *config.Node, path string) (node, error) {
 			title:  n.Pane.Title,
 			border: n.Pane.Border == nil || *n.Pane.Border,
 			w:      w,
+			pane:   n.Pane,
+			parent: parent,
 		}
 		m.leaves = append(m.leaves, lf)
 		return node{leaf: lf}, nil
@@ -196,7 +208,7 @@ func (m *Model) build(n *config.Node, path string) (node, error) {
 	out := node{direction: dir}
 	for i := range n.Children {
 		ch := &n.Children[i]
-		sub, err := m.build(&ch.Node, fmt.Sprintf("%s.children[%d]", path, i))
+		sub, err := m.build(&ch.Node, ch, fmt.Sprintf("%s.children[%d]", path, i))
 		if err != nil {
 			return node{}, err
 		}
