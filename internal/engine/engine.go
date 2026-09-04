@@ -202,6 +202,11 @@ type Model struct {
 	// test clicks against it (outside = dismiss, inside = row/field/tab hit).
 	ovX, ovY, ovW, ovH int
 
+	// drag.go: mod+drag pane move/resize state.
+	dragMode             dragMode
+	dragLeaf             int // leaf grabbed when the drag started
+	dragLastX, dragLastY int // last screen position dragResizeStep consumed
+
 	// ovSplit state (split.go): the context menu's Split row and the "New
 	// pane" row (right-click on dead space) both land here.
 	spTarget int    // leaf index the split applies to; -1 = wrap the whole root ("New")
@@ -628,6 +633,15 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	bw, bh := m.bodyDims()
 	if !m.ready || m.rectW != bw || m.rectH != bh {
 		return m, nil
+	}
+	// mod+drag (move/resize, see drag.go) preempts everything below it,
+	// including the plain right-click context menu — "holding mod disables
+	// the normal context-menu function" is exactly this branch winning.
+	// Once a drag is under way it keeps routing here even if a motion event
+	// happens to not carry Alt (some terminals only stamp modifiers on the
+	// initial press), so releasing the modifier mid-drag can't strand it.
+	if m.dragMode != dragNone || msg.Alt {
+		return m.handleDragMouse(msg)
 	}
 	i := m.leafAt(msg.X, msg.Y)
 	if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
