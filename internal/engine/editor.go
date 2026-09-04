@@ -510,16 +510,37 @@ func (m *Model) applyEdit() tea.Cmd {
 	return cmd
 }
 
+// editorPanel's row layout, shared by editorPanel and editorMouseClick so the
+// two can never drift apart: title, tabs, a separator rule, a blank line,
+// then one row per field with a blank spacer row after it (the extra
+// breathing room item 1 asked for — a dense one-row-per-field list read as
+// cramped). edMinWidth pads every line out to a floor so a panel with just a
+// couple of short fields (e.g. the Widget tab on a "text" pane) doesn't look
+// squeezed next to General/Layout.
+const (
+	edTabRow      = 1
+	edFieldsStart = 4
+	edFieldStride = 2
+	edMinWidth    = 48
+	edLabelWidth  = 14
+)
+
+// edTabCellWidth is a tab's rendered width (" " + label + " ", doubled) —
+// used by both editorPanel (to build the navbar) and editorMouseClick (to
+// hit-test it), so they can't disagree on where one tab ends and the next
+// begins.
+func edTabCellWidth(label string) int { return lipgloss.Width(label) + 4 }
+
 // editorMouseClick maps a click's content-relative (x, y) to editorPanel's
-// two interactive regions: the tab navbar (row 1) and the field list (row 3
-// onward, one row per field). A tab click switches tabs; a field click
-// selects it, and immediately toggles an fBool field — a checkbox reacts to
-// one click, not click-then-arrow.
+// two interactive regions: the tab navbar (edTabRow) and the field list
+// (edFieldsStart onward, one row per field, edFieldStride apart). A tab
+// click switches tabs; a field click selects it, and immediately toggles an
+// fBool field — a checkbox reacts to one click, not click-then-arrow.
 func (m *Model) editorMouseClick(cx, cy int) (tea.Model, tea.Cmd) {
-	if cy == 1 {
+	if cy == edTabRow {
 		x := 0
 		for i, t := range m.editorTabs() {
-			w := lipgloss.Width(t) + 2 // " " + t + " "
+			w := edTabCellWidth(t)
 			if cx >= x && cx < x+w {
 				m.edTab, m.edRow = i, 0
 				return m, nil
@@ -530,8 +551,12 @@ func (m *Model) editorMouseClick(cx, cy int) (tea.Model, tea.Cmd) {
 	}
 
 	fields := m.editorFields()
-	i := cy - 3
-	if i < 0 || i >= len(fields) {
+	rel := cy - edFieldsStart
+	if rel < 0 || rel%edFieldStride != 0 {
+		return m, nil
+	}
+	i := rel / edFieldStride
+	if i >= len(fields) {
 		return m, nil
 	}
 	m.edRow = i
@@ -556,16 +581,19 @@ func (m *Model) editorPanel() string {
 	b.WriteString(th.helpTitle.Render(title))
 	b.WriteString("\n")
 
-	// tab navbar — always visible
+	// tab navbar, then a separator rule marking it off from the fields below.
 	var tabs []string
 	for i, t := range m.editorTabs() {
+		cell := "  " + t + "  "
 		if i == m.edTab {
-			tabs = append(tabs, th.menuSel.Render(" "+t+" "))
+			tabs = append(tabs, th.menuSel.Render(cell))
 		} else {
-			tabs = append(tabs, th.menuItem.Render(" "+t+" "))
+			tabs = append(tabs, th.menuItem.Render(cell))
 		}
 	}
 	b.WriteString(strings.Join(tabs, ""))
+	b.WriteString("\n")
+	b.WriteString(th.helpDim.Render(strings.Repeat("─", edMinWidth)))
 	b.WriteString("\n\n")
 
 	fields := m.editorFields()
@@ -578,11 +606,10 @@ func (m *Model) editorPanel() string {
 		if i == m.edRow {
 			mark = th.helpKey.Render("› ")
 		}
-		b.WriteString(mark + th.helpDesc.Render(padRight(f.label, 11)) + m.editControl(f, i == m.edRow))
-		b.WriteString("\n")
+		b.WriteString(mark + th.helpDesc.Render(padRight(f.label, edLabelWidth)) + "  " + m.editControl(f, i == m.edRow))
+		b.WriteString("\n\n") // edFieldStride: one blank spacer row per field
 	}
 
-	b.WriteString("\n")
 	switch {
 	case m.edErr != "":
 		b.WriteString(th.helpKey.Render("! "+m.edErr) + "\n")
@@ -595,7 +622,25 @@ func (m *Model) editorPanel() string {
 	}
 	b.WriteString(th.helpDim.Render("↑↓ field · ←→ change · type to edit text") + "\n")
 	b.WriteString(th.helpDim.Render("Enter apply · " + m.mod + "+s save · Esc exit"))
-	return th.helpBox.Render(b.String())
+	return th.helpBox.Render(padBlockWidth(b.String(), edMinWidth))
+}
+
+// padBlockWidth right-pads every line of s to at least minW cells (never
+// narrower than the block's own widest line) — the "bigger, roomier" panel
+// floor: a tab with only a couple of short fields still fills a decent box
+// instead of shrink-wrapping to its narrowest content.
+func padBlockWidth(s string, minW int) string {
+	lines := strings.Split(s, "\n")
+	w := minW
+	for _, ln := range lines {
+		if x := lipgloss.Width(ln); x > w {
+			w = x
+		}
+	}
+	for i, ln := range lines {
+		lines[i] = padRight(ln, w)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) editControl(f edField, active bool) string {

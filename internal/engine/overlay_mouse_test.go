@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -75,8 +73,9 @@ func TestEditorMouseClickTogglesBoolField(t *testing.T) {
 	_ = m.View()
 	before := m.eb.border
 
-	// General tab fields: type(0), title(1), border(2); field i is row i+3.
-	u, _ := clickAt(m, colX(m, 1), rowY(m, 2+3))
+	// General tab fields: type(0), title(1), border(2); field i is at row
+	// edFieldsStart + i*edFieldStride.
+	u, _ := clickAt(m, colX(m, 1), rowY(m, edFieldsStart+2*edFieldStride))
 	m = u.(*Model)
 
 	if m.edRow != 2 {
@@ -95,10 +94,10 @@ func TestEditorMouseClickSwitchesTab(t *testing.T) {
 		t.Fatalf("precondition: edTab = %d, want 0", m.edTab)
 	}
 
-	// Tabs render on content row 1 as " General "," Layout "," Widget ".
+	// Tabs render on content row edTabRow as "  General  ","  Layout  ", etc.
 	tabs := m.editorTabs()
-	tab0W := lipgloss.Width(tabs[0]) + 2
-	u, _ := clickAt(m, colX(m, tab0W+1), rowY(m, 1)) // 1 cell into the Layout tab
+	tab0W := edTabCellWidth(tabs[0])
+	u, _ := clickAt(m, colX(m, tab0W+1), rowY(m, edTabRow)) // 1 cell into the Layout tab
 	m = u.(*Model)
 
 	if m.edTab != 1 {
