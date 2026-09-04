@@ -10,7 +10,9 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   JSON (`DisallowUnknownFields`). `Validate()` enforces tree invariants.
   `Parse` is the ONLY place the wire format is known — add YAML here, nowhere else.
   `global.go`: `GlobalConfig` + `LoadGlobal()` / `ParseGlobal()` — the runner-wide
-  config at `$XDG_CONFIG_HOME/ultui/config.json` (missing file → `nil,nil`).
+  config at `$XDG_CONFIG_HOME/ultui/config.json` (missing file → `nil,nil`);
+  `SaveGlobalThemeStyle()` (load-mutate theme+style, preserve the rest) and
+  `SaveGlobal()` (replace the whole file — F3) both temp-file+rename.
 - `internal/widget` — `Widget` interface, `Register(kind, Factory)` /
   `New(*config.Pane)` registry. Kinds self-register in `init()`: `text`,
   `markdown` (glamour, markdown.go), `command`, `shell`. `scrollBox` (scroll.go)
@@ -22,16 +24,23 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   program exit), `Interrupter` (`Interrupt() error` — kill just this pane's
   process on a confirmed locked Ctrl+C; shell impl sets `exited` + "process
   killed" note), `StreamMsg` (endless read-loop msg marker), `ScrollProgress`
-  (`ScrollFraction() float64` 0..1 → engine appends `NN%` to the pane title).
+  (`ScrollFraction() float64` 0..1 → engine appends `NN%` to the pane title),
+  `Zoomer` (`SetZoom(level int)` — per-pane content scale, `mod+=/-/0`; `text`
+  implements it via `bigfont.go`'s 3x5 block-glyph font, nothing else does).
 - `internal/engine` — `sizeSpec`/`parseSize`/`distribute` (layout.go), `Model`
   (bubbletea root, engine.go: focus-lock state machine + directional focus +
-  mouse hit-test), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
-  palettes + stylesets + memoized `theme` (theme.go), status bar (chrome.go),
-  overlay enum + F1 help + Ctrl+C confirm dialog + per-pane interrupt
-  (overlay.go), F2 control panel (control.go), theme/style picker (settings.go),
-  pane context menu (context.go), pane/config editor (editor.go),
-  per-pane zoom math `zoomCells`/`shiftZoom` (layout.go),
-  `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions` (snapshot.go).
+  mouse hit-test), identity-preserving tree rebuild (rebuild.go: `rebuild()`,
+  `indexOfPane`, `paneOf`), directional resize/swap/flip-split (resize.go),
+  Split/Close/New-pane structural edits (split.go), mod+drag move/resize
+  (drag.go), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
+  palettes + stylesets + memoized `theme` (theme.go), status bar + `splice()`/
+  `overlayGeometry` (chrome.go), overlay enum + F1 help + Ctrl+C confirm
+  dialog + per-pane interrupt (overlay.go), mouse routing for every overlay
+  (overlay_mouse.go), F2 control panel (control.go), F3 global
+  settings/diagnostics panel (global.go), theme/style picker (settings.go),
+  pane context menu (context.go), pane/config editor incl. Keybinds tab
+  (editor.go), `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions`
+  (snapshot.go).
 - `main.go` — CLI: `run`, `validate`, `render`, `config`, `version`, `help`.
   `run`/`render` load the global config via `config.LoadGlobal` →
   `engine.OptionsFromGlobal` and pass it to `*WithOptions`.
@@ -53,70 +62,116 @@ old configs don't fail `DisallowUnknownFields`.
 (rounded|double|heavy|ascii; ""→rounded), `Keybindings map[string]string`.
 Folded into `engine.Options` by `OptionsFromGlobal`. `config.SaveGlobalThemeStyle`
 persists just theme+style (temp-file + rename, other fields untouched) — wired to
-`Options.SaveTheme` in main.go so the engine never writes disk itself. Likewise
-`config.Save(path, *Config)` (Validate → marshal-indent → tmp+rename) is wired to
+`Options.SaveTheme` in main.go so the engine never writes disk itself.
+`config.SaveGlobal` replaces the whole file — wired to `Options.SaveGlobal`, F3's
+save target; `applyGlobal` (global.go) always carries `m.opts.Keys` (this run's
+already-resolved global keybindings) into what it saves, so it can never
+silently drop a hand-edited one it never touched. Likewise `config.Save(path,
+*Config)` (Validate → marshal-indent → tmp+rename) is wired to
 `Options.SaveConfig` by `cmdRun`; the editor overlay calls it on `mod+s`.
+`Options.ConfigPath`/`GlobalConfigPath` are plain strings `main.go` resolves and
+hands over for F3's info block — engine still never touches either path itself.
 
 Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
 the live `widget.Widget`. Each carries a back-pointer to its live config source
 (`node.cfg *config.Node`, `child.cfg *config.Child`, `leaf.pane`/`leaf.parent`/
 `leaf.split`); `render` re-reads `Direction`/`Size` from those each frame so the
-editor's edits aren't frozen at build time. `m.leaves` is the tree-order focus ring; `m.focus`
-indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
-locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings|ovControl`) =
-the active modal layer (`ovContext` = pane menu, `ovEditor` = pane/config
-editor); `m.overlayReturn` is a one-level back target (F2 control panel → picker
-→ Esc/Enter returns to F2). `m.ctxLeaf` = the leaf the context menu / editor
-targets, captured at open time (not re-read from `m.focus`). `leaf.zoom` = per-pane size bias in
-steps, folded into every ancestor split by `shiftZoom` (sum-preserving).
-`m.themeMemo` caches the resolved `theme` (`invalidateTheme()` drops it — picker
-live preview).
+editor's edits aren't frozen at build time. `leaf.chain []ancestorLink` (each
+`{split *config.Node, idx int}`) is the root-to-parent path `build()` threads
+down while recursing — `resize.go` walks it backward to find the nearest
+enclosing split whose axis matches an arrow direction. `m.leaves` is the
+tree-order focus ring; `m.focus` indexes it — but any structural edit
+(Split/Close/New/swap) invalidates every such index, so re-resolve via
+`indexOfPane(capturedPanePointer)` after calling `rebuild()`, never keep an
+index across the call. `m.locked` = focus lock; `m.pendingEsc` = one Esc
+buffered inside a locked raw pane. `m.overlay`
+(`ovNone|ovHelp|ovConfirm|ovSettings|ovControl|ovContext|ovEditor|ovSplit|ovGlobal`)
+= the active modal layer; `m.overlayReturn` is a one-level back target (F2 or F3
+→ theme picker → Esc/Enter returns to whichever opened it). `m.ctxLeaf` = the
+leaf the context menu / editor targets, captured at open time (not re-read from
+`m.focus`); `-1` is a valid value meaning "dead space" (the New-pane menu).
+`leaf.contentZoom` = per-pane content-scale level (0=unscaled), forwarded to
+the widget via the optional `widget.Zoomer` interface — nothing to do with
+layout. `m.ovX/Y/W/H` = the active overlay panel's bounding box, stamped by
+`splice()` every render, used by `handleOverlayMouse` to hit-test clicks.
+`m.dragMode` (`dragNone|dragMove|dragResize`) + `m.dragLeaf`/`dragLastX`/
+`dragLastY` = mod+drag state (drag.go). `m.themeMemo` caches the resolved
+`theme` (`invalidateTheme()` drops it — picker live preview).
 
 ## Control flow
 
-- `NewWithOptions(cfg, opts)` (`New` = defaults): key precedence
-  `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through `expandMod`
-  ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `tab`/`shift+tab`→focus-next/prev,
-  `f1`→help, `f2`→control, `mod+w`→context-menu, `mod+=`/`mod++`/`mod+-`/`mod+_`/
-  `mod+0`→zoom in/in/out/out/reset (focused pane). Ctrl+C, arrows, Enter, Esc are handled in
-  code, not the map (Ctrl+C must never be a plain quit binding). `build()` recurses,
-  instantiating widgets into `m.leaves`.
+- `NewWithOptions(cfg, opts)` (`New` = defaults) calls `rebuildKeyMap()`: key
+  precedence `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through
+  `expandMod` ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `tab`/`shift+tab`→
+  focus-next/prev, `f1`→help, `f2`→control, `mod+w`→context-menu, `mod+=`/
+  `mod++`/`mod+-`/`mod+_`/`mod+0`→content-zoom in/in/out/out/reset,
+  `mod+↑↓←→`→resize-{up,down,left,right}, `mod+shift+↑↓←→`→swap-{…},
+  `mod+s`→flip-split. Ctrl+C, arrows, Enter, Esc, F3 are handled in code, not
+  the map (Ctrl+C must never be a plain quit binding; F3 must NOT be in
+  `isGlobalKey`). `build()` recurses, instantiating widgets into `m.leaves`
+  and threading `leaf.chain` (nil `carry`/`fresh` on this first build — see
+  `rebuild()` below for what those are for). `rebuildKeyMap()` is also called
+  by `applyKeybinds` (editor.go) whenever the Keybinds tab's apply actually
+  changes `cfg.Keybindings`, so an edited/added binding works immediately.
 - `Update`: `WindowSizeMsg`→store size+`ready`.
   - `KeyMsg` → `handleKey`:
     1. `m.overlay` non-none swallows the key: help → Esc/F1/q/Enter/Space close
        (Ctrl+C → quit-confirm); confirm → y/Y/Enter/Ctrl+C confirm, n/N/Esc
        cancel (`cfDiscard`'s cancel returns to `ovEditor`, not `ovNone`);
        editor → `handleEditorKey` (Tab tabs, ↑↓ fields, ←→ change, type edits
-       text, Enter applies live, `mod+s` applies+`SaveConfig`, Esc exits with a
-       `cfDiscard` confirm when `edDirty`/`edConfigDirty`);
+       text, `ctrl+d` removes a Keybinds-tab row, Enter applies live (or, on
+       the "+ add keybind" row, appends one), `mod+s` applies+`SaveConfig`,
+       Esc exits with a `cfDiscard` confirm when `edDirty`/`edConfigDirty`);
+       split → `handleSplitKey` (↑↓/Tab field, ←→ change direction/percent,
+       Enter performs the split/wrap-root and calls `rebuild()`, Esc cancels);
+       global → `handleGlobalKey` (↑↓ row, ←→/Space cycle mod or toggle
+       statusbar, Enter on the theme row opens the picker, `mod+s` calls
+       `applyGlobal`→`opts.SaveGlobal`, Esc/F3 close);
        settings → `handleSettingsKey` (arrows preview, Enter commits +
        `opts.SaveTheme`, Esc restores — both return to `overlayReturn`);
-       control → `handleControlKey` (↑↓ pick, Enter opens the row, Esc closes).
-    2. `isGlobalKey` (starts `mod+`, or `f1`/`f2` — NOT `f3`, which now falls
-       through to the widget) → run bound action even when locked. Ctrl+C is
-       deliberately NOT global.
+       control → `handleControlKey` (↑↓ pick, Enter opens the row, Esc closes);
+       context → `handleContextKey` (↑↓/`home`/`end` skip disabled rows, Enter
+       runs — Split/New open `ovSplit`, Close opens a `cfClose` confirm, Stop a
+       `cfKill` confirm — Esc/`mod+w` close).
+    2. `isGlobalKey` (starts `mod+`, or `f1`/`f2` — NOT `f3`) → run bound
+       action even when locked. Ctrl+C is deliberately NOT global.
     3. `ctrl+c` → locked: `lockedInterrupt` (pane has `widget.Interrupter` →
        kill-confirm dialog, else forward the key); unlocked: `openConfirmQuit`.
     4. locked → `esc` releases (raw pane: first `esc` buffers, `esc esc` forwards
        a literal Esc, any other key after a lone buffered esc releases + re-runs);
        otherwise forward the key to the focused widget.
     5. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
-       when rects are stale); `enter` locks; else bound action; else forward.
-  - `MouseMsg` → ignored outright while `overlayActive()`; else `handleMouse`:
-    no-op unless `rectW/rectH == bodyDims()`. Right press → `openContext(leafAt)`
-    (target captured, focus unchanged). Left press → focus `leafAt`, clears lock
-    if the pane changed. Wheel → forward to that leaf, no focus change. Because
-    mouse is dropped once an overlay is up, the context menu is keyboard-driven
-    (↑↓ skip greyed rows, Enter runs, Esc / mod+w close).
+       when rects are stale); `enter` locks; `f3` opens the global panel
+       (hardcoded here, not `isGlobalKey`, so it's NAV-only); else bound
+       action; else forward.
+  - `MouseMsg` → `overlayActive()` routes to `handleOverlayMouse`
+    (overlay_mouse.go): outside the panel's stamped bounding box
+    (`m.ovX/Y/W/H`), a left/right press is re-dispatched as `handleKey(Esc)`
+    — dismiss through the SAME per-overlay Esc handling, never a generic
+    close; inside, content-relative coords (`- ovX/ovY - panelContentOffsetX/Y`,
+    one constant for every panel since they all use `th.helpBox`) go to that
+    overlay's `xxxMouseClick`. Else `handleMouse`: `m.dragMode != dragNone ||
+    msg.Alt` → `handleDragMouse` (drag.go) FIRST, preempting everything below
+    (this is how holding mod disables the plain right-click menu) — press
+    starts `dragMove`/`dragResize` on the leaf under the cursor and focuses
+    it, `dragResize` motion calls `resizeFocused` live per `dragCellsPerStep`
+    cells moved, release either ends a resize or (`dragMove`) swaps
+    `nodeOfLeaf(from).Pane` with `nodeOfLeaf(to).Pane` and `rebuild()`s. Non-
+    drag: no-op unless `rectW/rectH == bodyDims()`. Right press → `openContext
+    (leafAt)` (`-1` for dead space → the New-pane menu; target captured, focus
+    unchanged). Left press → focus `leafAt`, clears lock if the pane changed.
+    Wheel → forward to that leaf, no focus change.
   - other msg → broadcast to all widgets.
 - `View`: `bodyDims()` = full size minus 1 row when the status bar shows
   (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp
   `rectW/rectH` to the body size, append `statusBar(w)`, then splice the active
-  overlay (`renderHelp`/`renderConfirm`/`renderSettings`/`renderControl`) centered
-  via `overlayCenter` (ANSI-safe, `x/ansi` Truncate + TruncateLeft).
-  `render(n,x,y,w,h)` recurses tracking absolute origin; each leaf stores its rect
-  (`x,y,pw,ph`). Split nodes: `distribute` then, if any child subtree holds a
-  zoomed leaf, `shiftZoom` rebalances the sizes (total held constant).
+  overlay via `m.splice(frame, panel)` (chrome.go) — calls `overlayGeometry`
+  to stamp `m.ovX/Y/W/H` before compositing through `overlayCenter` (ANSI-safe,
+  `x/ansi` Truncate + TruncateLeft). `render(n,x,y,w,h)` recurses tracking
+  absolute origin; each leaf stores its rect (`x,y,pw,ph`). Split nodes: just
+  `distribute` — no post-pass any more (that was `shiftZoom`, deleted with the
+  old zoom-as-size feature; resize/swap write directly into `Child.Size` /
+  swap `Node` content instead, see `resize.go`/`split.go`).
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
   row) — when `lf.title != ""` it gets a `ScrollProgress` `NN%` suffix and, if
   focused+locked, a `<bullet> LOCKED` suffix; border + glyphs from the resolved
@@ -189,19 +244,34 @@ per-pane options blob and decode in the factory.
   overflow, it clamps to 0 and may look wrong. `Validate` DOES reject a split
   whose child percentages sum > 100.
 - A config can remap a key but can't *unbind* a default (same-key remap only).
-- Unlocked, the engine owns arrows/Tab/Enter/Ctrl+C and every bound key; other
-  keys fall through to the focused widget. Locked, only `isGlobalKey` (mod+…,
-  F1, F2 — NOT F3), `ctrl+c` (→ per-pane interrupt) and `esc` are intercepted —
-  everything else goes to the widget. A `RawKeyConsumer` pane only receives raw
-  keys **while locked**, so the user must press Enter to drive `htop`/`vim`.
-  Ctrl+C never quits outright (NAV: confirm dialog; LOCKED: kills that pane's
-  process); the way out of a locked pane is Esc then Ctrl+C.
+- Unlocked, the engine owns arrows/Tab/Enter/Ctrl+C/F3 and every bound key;
+  other keys fall through to the focused widget. Locked, only `isGlobalKey`
+  (mod+…, F1, F2 — NOT F3, which is a hardcoded NAV-only case, not in
+  `isGlobalKey` at all), `ctrl+c` (→ per-pane interrupt) and `esc` are
+  intercepted — everything else goes to the widget. A `RawKeyConsumer` pane
+  only receives raw keys **while locked**, so the user must press Enter to
+  drive `htop`/`vim`. Ctrl+C never quits outright (NAV: confirm dialog;
+  LOCKED: kills that pane's process); the way out of a locked pane is Esc
+  then Ctrl+C.
 - `engine.New/Run/Snapshot` stay pure (default options). The global config is
-  loaded in `main.go` only, so tests never touch `~/.config`.
+  loaded in `main.go` only, so tests never touch `~/.config`. Same rule for
+  `Options.ConfigPath`/`GlobalConfigPath` — plain strings `main.go` hands
+  over, never resolved by the engine itself.
+- A structural edit to the pane tree (Split/Close/New/swap — anything that
+  changes `Node.Children`'s length or moves a `*config.Pane` between `Child`
+  slots) MUST call `rebuild()` immediately after and MUST NOT hold a leaf
+  index (`m.focus`, `m.ctxLeaf`, …) across the call — capture a
+  `*config.Pane` before, re-resolve via `indexOfPane` after. A pure
+  `Child.Size`/`Node.Direction` mutation (resize, flip-split) needs neither —
+  `render()` re-reads both every frame and the `Children` slice itself is
+  untouched. `New`/Split's blank pane defaults to `type: "text"` — a pane
+  needs a non-empty `Type` or `config.Save`'s `Validate()` rejects it.
 - Status bar eats the last row (`bodyDims`); `rectW/rectH` are stamped to the
   body size, and `handleMouse`/`focusDir` compare against `bodyDims()`, not
   `w/h`.
 - Never call `emu.Read` off the bubbletea goroutine (x/vt race). Consequence:
   terminal-query responses are not forwarded to `shell` children.
 - Leaf rects are only valid for the last-rendered size — `handleMouse` bails if
-  the stamp is stale.
+  the stamp is stale. Same staleness guard applies to overlay panels
+  (`m.ovX/Y/W/H`, stamped by `splice()`), which is why `handleOverlayMouse`
+  only trusts them within the same render cycle they were stamped in.
