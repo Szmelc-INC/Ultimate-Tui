@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,6 +27,7 @@ const (
 	fText                    // free-typed string
 	fBool                    // on/off
 	fSlider                  // integer in [min,max] by step
+	fAction                  // a button-like row; Enter runs it, no value to hold
 )
 
 type editScope int
@@ -53,26 +56,46 @@ type editBuf struct {
 	dir                    string // enclosing split's direction: column | row
 	hasSize                bool   // false for the root pane (no enclosing split)
 	hasDir                 bool   // false for the root pane
+
+	// keybinds is the scratch copy of cfg.Keybindings (Keybinds tab,
+	// edScopeConfig only), sorted by key for a stable display order. Loaded
+	// once when the config editor opens and preserved across loadPane calls
+	// (switching the Config tab's pane selector must not discard it) — see
+	// openConfigEditor / loadPane.
+	keybinds []kbEntry
 }
+
+// kbEntry is one row on the Keybinds tab: a key chord and the action name it
+// runs. An empty key is dropped on apply (see applyKeybinds); the action is
+// not validated against known action names — an unrecognized one just never
+// matches, same as a hand-edited config file today.
+type kbEntry struct{ key, action string }
 
 var mdStyleChoices = []string{"", "dark", "light", "dracula", "tokyo-night", "pink", "ascii", "notty"}
 var sizeModeChoices = []string{"auto", "percent", "fixed", "flex"}
 
 func (m *Model) editorTabs() []string {
 	if m.edScope == edScopeConfig {
-		return []string{"Config", "General", "Layout", "Widget"}
+		return []string{"Config", "Keybinds", "General", "Layout", "Widget"}
 	}
 	return []string{"General", "Layout", "Widget"}
 }
 
-// edLogicalTab maps the visible tab index to a scope-independent one:
-// -1 = the config tab (only present in whole-config scope), 0/1/2 =
-// General/Layout/Widget.
+// edLogicalTab maps the visible tab index to a scope-independent one: -1 =
+// the config tab, -2 = the keybinds tab (both only present in whole-config
+// scope), 0/1/2 = General/Layout/Widget.
 func (m *Model) edLogicalTab() int {
-	if m.edScope == edScopeConfig {
-		return m.edTab - 1
+	if m.edScope != edScopeConfig {
+		return m.edTab
 	}
-	return m.edTab
+	switch m.edTab {
+	case 0:
+		return -1
+	case 1:
+		return -2
+	default:
+		return m.edTab - 2
+	}
 }
 
 func (m *Model) leafNames() []string {
@@ -91,6 +114,17 @@ func (m *Model) editorFields() []edField {
 			{key: "cfg.version", label: "version", kind: fText},
 			{key: "cfg.pane", label: "pane", kind: fSelect, choices: m.leafNames()},
 		}
+	}
+	if m.edLogicalTab() == -2 { // Keybinds tab
+		var fs []edField
+		for i := range m.eb.keybinds {
+			fs = append(fs,
+				edField{key: kbFieldKey(i, "key"), label: fmt.Sprintf("#%d key", i+1), kind: fText},
+				edField{key: kbFieldKey(i, "action"), label: "→ runs", kind: fText},
+			)
+		}
+		fs = append(fs, edField{key: "kb.new", label: "", kind: fAction})
+		return fs
 	}
 	switch m.edLogicalTab() {
 	case 0: // General
@@ -159,6 +193,7 @@ func (m *Model) loadPane(idx int) {
 	if lf.split != nil && lf.split.Direction == "row" {
 		dir = "row"
 	}
+	keybinds := m.eb.keybinds // Keybinds tab state is independent of which pane is loaded
 	m.eb = editBuf{
 		typ:      p.Type,
 		title:    p.Title,
@@ -173,7 +208,91 @@ func (m *Model) loadPane(idx int) {
 		dir:      dir,
 		hasSize:  lf.parent != nil,
 		hasDir:   lf.split != nil,
+		keybinds: keybinds,
 	}
+}
+
+// loadKeybinds refills the Keybinds tab's scratch list from cfg.Keybindings,
+// sorted by key for a stable display order.
+func (m *Model) loadKeybinds() {
+	m.eb.keybinds = m.eb.keybinds[:0]
+	keys := make([]string, 0, len(m.cfg.Keybindings))
+	for k := range m.cfg.Keybindings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		m.eb.keybinds = append(m.eb.keybinds, kbEntry{key: k, action: m.cfg.Keybindings[k]})
+	}
+}
+
+// addKeybindRow appends a blank entry and moves the cursor to its key field,
+// ready to type — the "+ add keybind" row's Enter action.
+func (m *Model) addKeybindRow() {
+	m.eb.keybinds = append(m.eb.keybinds, kbEntry{})
+	m.edRow = (len(m.eb.keybinds) - 1) * 2
+	m.edDirty, m.edConfigDirty = true, true
+}
+
+// removeKeybindRow deletes entry i (ctrl+d on either of its two rows) and
+// keeps the cursor in range.
+func (m *Model) removeKeybindRow(i int) {
+	if i < 0 || i >= len(m.eb.keybinds) {
+		return
+	}
+	m.eb.keybinds = append(m.eb.keybinds[:i], m.eb.keybinds[i+1:]...)
+	m.edRow = clampInt(m.edRow, 0, 2*len(m.eb.keybinds))
+	m.edDirty, m.edConfigDirty = true, true
+}
+
+// applyKeybinds commits the scratch keybind list to cfg.Keybindings (empty
+// keys dropped) and, if it actually changed, rebuilds m.keys so an edited or
+// newly added binding works immediately — no restart needed.
+func (m *Model) applyKeybinds() {
+	next := map[string]string{}
+	for _, kb := range m.eb.keybinds {
+		if k := strings.TrimSpace(kb.key); k != "" {
+			next[k] = kb.action
+		}
+	}
+	if !mapsEqual(m.cfg.Keybindings, next) {
+		m.cfg.Keybindings = next
+		m.edConfigDirty = true
+		m.rebuildKeyMap()
+	}
+}
+
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// kbFieldKey/parseKbFieldKey encode/decode a Keybinds-tab row's edField.key
+// ("kb.<index>.key" or "kb.<index>.action") — the index lets editGet/
+// editSetText address one entry in the dynamic-length m.eb.keybinds list
+// with the same fText plumbing every other text field uses.
+func kbFieldKey(i int, sub string) string { return fmt.Sprintf("kb.%d.%s", i, sub) }
+
+func parseKbFieldKey(k string) (idx int, sub string, ok bool) {
+	if !strings.HasPrefix(k, "kb.") {
+		return 0, "", false
+	}
+	rest := strings.SplitN(strings.TrimPrefix(k, "kb."), ".", 2)
+	if len(rest) != 2 {
+		return 0, "", false
+	}
+	i, err := strconv.Atoi(rest[0])
+	if err != nil {
+		return 0, "", false
+	}
+	return i, rest[1], true
 }
 
 // openPaneEditor edits a single pane, reached from the context menu's Edit row.
@@ -190,12 +309,14 @@ func (m *Model) openPaneEditor(idx int) {
 
 // openConfigEditor edits the whole config, reached from the F2 control panel.
 // Same controls; a leading "Config" tab carries the top-level name and a pane
-// selector that walks every leaf.
+// selector that walks every leaf, and a "Keybinds" tab lists/edits/adds/
+// removes cfg.Keybindings entries.
 func (m *Model) openConfigEditor() {
 	m.overlay = ovEditor
 	m.edScope = edScopeConfig
 	m.edTab, m.edRow = 0, 0
 	m.edDirty, m.edConfigDirty, m.edNote = false, false, ""
+	m.loadKeybinds()
 	m.loadPane(0)
 }
 
@@ -285,6 +406,10 @@ func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		if f.kind == fAction && f.key == "kb.new" {
+			m.addKeybindRow()
+			return m, nil
+		}
 		if f.kind == fText {
 			return m, nil // no multiline editing here
 		}
@@ -296,6 +421,11 @@ func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if f.kind == fBool {
 			return m, m.editCycle(f, 1)
 		}
+	case "ctrl+d":
+		if i, _, ok := parseKbFieldKey(f.key); ok {
+			m.removeKeybindRow(i)
+			return m, nil
+		}
 	}
 	if f.kind == fText {
 		m.editText(f, msg)
@@ -305,6 +435,12 @@ func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // editGet returns a field's current buffered value as a string.
 func (m *Model) editGet(f edField) string {
+	if i, sub, ok := parseKbFieldKey(f.key); ok && i < len(m.eb.keybinds) {
+		if sub == "action" {
+			return m.eb.keybinds[i].action
+		}
+		return m.eb.keybinds[i].key
+	}
 	switch f.key {
 	case "type":
 		return m.eb.typ
@@ -339,6 +475,15 @@ func (m *Model) editGet(f edField) string {
 }
 
 func (m *Model) editSetText(key, s string) {
+	if i, sub, ok := parseKbFieldKey(key); ok && i < len(m.eb.keybinds) {
+		if sub == "action" {
+			m.eb.keybinds[i].action = s
+		} else {
+			m.eb.keybinds[i].key = s
+		}
+		m.edDirty, m.edConfigDirty = true, true
+		return
+	}
 	switch key {
 	case "title":
 		m.eb.title = s
@@ -380,6 +525,9 @@ func (m *Model) editText(f edField, msg tea.KeyMsg) {
 // returns a command only for the whole-config pane selector, which commits the
 // pane being left (and can refuse to switch if that pane no longer builds).
 func (m *Model) editCycle(f edField, dir int) tea.Cmd {
+	if f.kind == fAction {
+		return nil // a button row has nothing to cycle; Enter runs it instead
+	}
 	if f.key == "cfg.pane" {
 		if len(m.leaves) < 2 {
 			return nil
@@ -437,6 +585,9 @@ func (m *Model) editCycle(f edField, dir int) tea.Cmd {
 // field changed, rebuilds the widget (closing the old one). Returns the new
 // widget's Init command, if any.
 func (m *Model) applyEdit() tea.Cmd {
+	if m.edScope == edScopeConfig {
+		m.applyKeybinds()
+	}
 	if m.ctxLeaf < 0 || m.ctxLeaf >= len(m.leaves) {
 		return nil
 	}
@@ -560,8 +711,13 @@ func (m *Model) editorMouseClick(cx, cy int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.edRow = i
-	if fields[i].kind == fBool {
+	switch fields[i].kind {
+	case fBool:
 		return m, m.editCycle(fields[i], 1)
+	case fAction:
+		if fields[i].key == "kb.new" {
+			m.addKeybindRow()
+		}
 	}
 	return m, nil
 }
@@ -591,9 +747,14 @@ func (m *Model) editorPanel() string {
 			tabs = append(tabs, th.menuItem.Render(cell))
 		}
 	}
-	b.WriteString(strings.Join(tabs, ""))
+	tabsLine := strings.Join(tabs, "")
+	b.WriteString(tabsLine)
 	b.WriteString("\n")
-	b.WriteString(th.helpDim.Render(strings.Repeat("─", edMinWidth)))
+	sepW := lipgloss.Width(tabsLine)
+	if sepW < edMinWidth {
+		sepW = edMinWidth
+	}
+	b.WriteString(th.helpDim.Render(strings.Repeat("─", sepW)))
 	b.WriteString("\n\n")
 
 	fields := m.editorFields()
@@ -620,7 +781,11 @@ func (m *Model) editorPanel() string {
 	case m.edDirty:
 		b.WriteString(th.helpDim.Render("● unapplied edits") + "\n")
 	}
-	b.WriteString(th.helpDim.Render("↑↓ field · ←→ change · type to edit text") + "\n")
+	hint := "↑↓ field · ←→ change · type to edit text"
+	if m.edLogicalTab() == -2 {
+		hint = "↑↓ field · type to edit · ctrl+d remove · Enter on + adds"
+	}
+	b.WriteString(th.helpDim.Render(hint) + "\n")
 	b.WriteString(th.helpDim.Render("Enter apply · " + m.mod + "+s save · Esc exit"))
 	return th.helpBox.Render(padBlockWidth(b.String(), edMinWidth))
 }
@@ -672,6 +837,8 @@ func (m *Model) editControl(f edField, active bool) string {
 			return th.helpDim.Render("—")
 		}
 		return oneLine(v)
+	case fAction:
+		return th.helpKey.Render("+ add keybind")
 	}
 	return ""
 }

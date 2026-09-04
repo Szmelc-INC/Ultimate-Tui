@@ -237,15 +237,7 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 		cfg:       cfg,
 	}
 
-	put := func(src map[string]string) {
-		for k, v := range src {
-			m.keys[expandMod(k, m.mod)] = v
-		}
-	}
-	put(baseBinds)
-	put(opts.Keys)
-	put(cfg.Keybindings)
-	m.tuiKeys = cfg.Keybindings
+	m.rebuildKeyMap()
 
 	root, err := m.build(&cfg.Layout, nil, nil, "layout", nil, nil, nil)
 	if err != nil {
@@ -264,6 +256,23 @@ func expandMod(key, mod string) string {
 		return mod + "+" + strings.TrimPrefix(key, "mod+")
 	}
 	return key
+}
+
+// rebuildKeyMap (re)resolves m.keys from baseBinds < opts.Keys < cfg.Keybindings
+// (config wins), "mod+"-expanding every key. Called once by NewWithOptions and
+// again whenever the Keybinds editor tab commits a change to cfg.Keybindings,
+// so an edited or newly added binding works immediately — no restart needed.
+func (m *Model) rebuildKeyMap() {
+	m.keys = map[string]string{}
+	put := func(src map[string]string) {
+		for k, v := range src {
+			m.keys[expandMod(k, m.mod)] = v
+		}
+	}
+	put(baseBinds)
+	put(m.opts.Keys)
+	put(m.cfg.Keybindings)
+	m.tuiKeys = m.cfg.Keybindings
 }
 
 // build walks a config subtree into an engine node/leaf tree, appending each
