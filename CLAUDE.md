@@ -66,6 +66,8 @@ Cross-cutting requirements: full keyboard + mouse interactivity; unicode/ascii/a
 
 `DESIGN.md` recommends (does not mandate) the Charm ecosystem — integrate all, some, or none: `bubbletea` (runtime/event loop), `lipgloss` (styling/layout), `bubbles` (widgets), `huh` (forms), `glamour`/`glow` (markdown), `gum`, `vhs`. Reference points for behavior: tmux, midnight commander, lazygit/lazyvim, archinstall, and CLI agent harnesses.
 
+Actually imported today: only `bubbletea` + `lipgloss` + `creack/pty` + `charmbracelet/x/vt` (see `go.mod`). `bubbles`/`huh`/`glamour` are *not* wired in — a `markdown`/`list`/`input` widget would be the first to pull one, and it goes in `internal/widget` behind the registry, not into the engine.
+
 ## Documentation deliverables
 
 The project expects two parallel docs, kept in sync with the code:
@@ -77,7 +79,7 @@ The project expects two parallel docs, kept in sync with the code:
 - **Runs on a live production Arch Linux system with no sandbox.** Be careful with destructive operations.
 - **Use git.** Work on a branch; never commit straight to `main` or merge without asking.
 - **Minimalism over frameworks.** Build exactly what's required with zero overhead. Don't pull a heavy dependency for one small task — write the snippet or cherry-pick it. Continuously question whether a solution is over-complex.
-- **Design authority.** Follow `DESIGN.md`'s intent closely *where it makes sense*. If an instruction is impossible, wrong, or wasteful, do it the better way while still delivering at least what was asked. If something clearly should exist, build it even if unmentioned.
+- **Design authority.** Follow `DESIGN.md`'s intent closely *where it makes sense*. If an instruction is impossible, wrong, or wasteful, do it the better way while still delivering at least what was asked. If something clearly should exist, build it even if unmentioned. (`DESIGN.md` is now vision + design requirements only — the agent/software-design rules it used to carry live in this section now.)
 - **Clarify only high-stakes unknowns.** For low-stakes ambiguity, make a best-effort call and proceed.
 
 ## Token discipline
