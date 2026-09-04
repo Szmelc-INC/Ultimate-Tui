@@ -85,6 +85,27 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
+// Save writes c back to path as indented JSON through a temp file + rename, so
+// a crash mid-write cannot truncate the config. It Validate()s first — a
+// structurally broken config (e.g. an empty name) is never written. Comments
+// and key order in the original file are not preserved; strict JSON has no
+// comments and the struct field order is canonical.
+func Save(path string, c *Config) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // Parse decodes config bytes (strict JSON — unknown keys are rejected so typos
 // surface) and validates the result.
 func Parse(data []byte) (*Config, error) {

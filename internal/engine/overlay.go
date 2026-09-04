@@ -25,8 +25,9 @@ const (
 type confirmKind int
 
 const (
-	cfQuit confirmKind = iota // end the program
-	cfKill                    // stop the focused pane's process
+	cfQuit    confirmKind = iota // end the program
+	cfKill                       // stop the focused pane's process
+	cfDiscard                    // leave the editor with unsaved edits
 )
 
 func (m *Model) overlayActive() bool { return m.overlay != ovNone }
@@ -60,7 +61,11 @@ func (m *Model) handleConfirmKey(key string) (tea.Model, tea.Cmd) {
 	case "y", "Y", "enter", "ctrl+c":
 		return m.confirmYes()
 	case "n", "N", "esc":
-		m.overlay = ovNone
+		if m.confirmKind == cfDiscard {
+			m.overlay = ovEditor // cancel → back to the editor, edits intact
+		} else {
+			m.overlay = ovNone
+		}
 		return m, nil
 	}
 	return m, nil
@@ -79,6 +84,9 @@ func (m *Model) confirmYes() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.locked, m.pendingEsc = false, false
+		return m, nil
+	case cfDiscard:
+		m.closeEditor()
 		return m, nil
 	}
 	return m, nil

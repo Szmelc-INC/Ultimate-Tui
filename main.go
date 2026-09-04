@@ -55,6 +55,10 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
 	}
+	// Let the editor overlay (F2 → Edit config, or a pane's context menu) write
+	// the edited config back to the file it was loaded from.
+	cfgPath := args[0]
+	opts.SaveConfig = func(c *config.Config) error { return config.Save(cfgPath, c) }
 	if err := engine.RunWithOptions(cfg, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1

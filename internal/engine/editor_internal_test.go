@@ -109,6 +109,89 @@ func TestApplyEditSizeInPlace(t *testing.T) {
 	}
 }
 
+func TestEditorSaveCallsCallbackAndClearsDirty(t *testing.T) {
+	cfg, err := config.Parse([]byte(oneText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	var saved *config.Config
+	opts := DefaultOptions()
+	opts.SaveConfig = func(c *config.Config) error { calls++; saved = c; return nil }
+	m, err := NewWithOptions(cfg, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = u.(*Model)
+
+	m.openPaneEditor(0)
+	m.eb.title = "Renamed"
+	m.edDirty = true
+	_ = m.editorSave()
+
+	if calls != 1 {
+		t.Fatalf("SaveConfig called %d times, want 1", calls)
+	}
+	if saved != m.cfg || m.leaves[0].pane.Title != "Renamed" {
+		t.Fatal("save did not apply the buffer to the live config first")
+	}
+	if m.edDirty || m.edConfigDirty {
+		t.Fatal("dirty flags not cleared after a successful save")
+	}
+	if m.edNote == "" {
+		t.Fatal("no on-screen save confirmation")
+	}
+}
+
+func TestEditorSaveWithoutCallbackErrors(t *testing.T) {
+	m := mkModel(t, oneText) // DefaultOptions -> SaveConfig nil
+	m.openPaneEditor(0)
+	m.eb.title = "X"
+	m.edDirty = true
+	_ = m.editorSave()
+	if m.edErr == "" {
+		t.Fatal("expected an error when no SaveConfig is wired")
+	}
+}
+
+func TestEditorEscConfirmsWhenDirty(t *testing.T) {
+	m := mkModel(t, oneText)
+	m.openPaneEditor(0)
+	m.eb.title = "Changed"
+	m.edDirty = true
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*Model)
+	if m.overlay != ovConfirm || m.confirmKind != cfDiscard {
+		t.Fatalf("Esc with edits did not raise the discard confirm (overlay=%d)", m.overlay)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = u.(*Model)
+	if m.overlay != ovEditor {
+		t.Fatalf("cancel did not return to the editor (overlay=%d)", m.overlay)
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = u.(*Model)
+	if m.overlay != ovNone {
+		t.Fatalf("discard=yes did not close the editor (overlay=%d)", m.overlay)
+	}
+}
+
+func TestEditorEscCleanWhenPristine(t *testing.T) {
+	m := mkModel(t, oneText)
+	m.openPaneEditor(0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*Model)
+	if m.overlay != ovNone {
+		t.Fatalf("Esc on a pristine editor did not close it (overlay=%d)", m.overlay)
+	}
+}
+
 func TestParseComposeSizeRoundTrip(t *testing.T) {
 	cases := []struct {
 		in, mode string

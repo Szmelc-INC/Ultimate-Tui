@@ -134,8 +134,9 @@ type Model struct {
 	edTab         int
 	edRow         int
 	edErr         string
-	edDirty       bool // scratch buffer differs from the live config
-	edConfigDirty bool // live config has unsaved edits (cleared on disk save)
+	edNote        string // transient confirmation ("saved"), cleared on next key
+	edDirty       bool   // scratch buffer differs from the live config
+	edConfigDirty bool   // live config has unsaved edits (cleared on disk save)
 
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)

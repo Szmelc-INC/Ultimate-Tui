@@ -116,7 +116,18 @@ up the space; the total never changes, so nothing shears.
 this TUI's own `keybindings`. **`F2`** opens the control panel: a summary of the
 effective runner settings plus a **Theme & style** row that opens the live
 picker (`↑↓` preview, `←→` switch column, `Enter` applies and saves to the global
-config, `Esc` reverts — either way you land back on the F2 menu).
+config, `Esc` reverts — either way you land back on the F2 menu), and an **Edit
+config** row that opens the editor over the whole config.
+
+**Editor** — right-click a pane → **Edit** (one pane), or **F2 → Edit config**
+(the lot). A slim tab bar (`General` / `Layout` / `Widget`, plus `Config` in
+whole-config mode) over typed controls: pick-lists for `type` / `markdownStyle`
+/ size mode, free text for `title` / `content` / `command`, an on/off for
+`border`, a slider for a numeric size. `↑↓` move between fields, `←→` change a
+value, type to edit a text field, `Tab` switches tabs. **`Enter`** applies the
+change to the running UI; **`mod+s`** also writes it back to the config file
+(`ultui run` only); **`Esc`** leaves, asking first if there are unsaved edits.
+Changing `type` rebuilds the pane's widget (the old process, if any, is stopped).
 
 ### Global runner config
 

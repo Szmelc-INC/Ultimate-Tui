@@ -166,7 +166,8 @@ func (m *Model) openPaneEditor(idx int) {
 	}
 	m.overlay = ovEditor
 	m.edScope = edScopePane
-	m.edTab, m.edRow, m.edDirty = 0, 0, false
+	m.edTab, m.edRow = 0, 0
+	m.edDirty, m.edConfigDirty, m.edNote = false, false, ""
 	m.loadPane(idx)
 }
 
@@ -176,16 +177,56 @@ func (m *Model) openPaneEditor(idx int) {
 func (m *Model) openConfigEditor() {
 	m.overlay = ovEditor
 	m.edScope = edScopeConfig
-	m.edTab, m.edRow, m.edDirty = 0, 0, false
+	m.edTab, m.edRow = 0, 0
+	m.edDirty, m.edConfigDirty, m.edNote = false, false, ""
 	m.loadPane(0)
+}
+
+// closeEditor drops the overlay (back to whatever opened it) and clears all
+// editor state. Called on a clean Esc and on "discard" from the confirm dialog.
+func (m *Model) closeEditor() {
+	m.overlay = m.overlayReturn
+	m.overlayReturn = ovNone
+	m.edDirty, m.edConfigDirty = false, false
+	m.edErr, m.edNote = "", ""
+}
+
+// openConfirmDiscard is the "you have unsaved edits" gate on leaving the editor.
+func (m *Model) openConfirmDiscard() (tea.Model, tea.Cmd) {
+	m.overlay = ovConfirm
+	m.confirmKind = cfDiscard
+	m.confirmPrompt = "Leave the editor? Unsaved edits are lost."
+	return m, nil
+}
+
+// editorSave applies the buffer and, if that succeeded, writes the whole config
+// to disk via Options.SaveConfig.
+func (m *Model) editorSave() tea.Cmd {
+	cmd := m.applyEdit()
+	if m.edErr != "" {
+		return cmd
+	}
+	if m.opts.SaveConfig == nil {
+		m.edErr = "no save target wired"
+		return cmd
+	}
+	if err := m.opts.SaveConfig(m.cfg); err != nil {
+		m.edErr = "save failed: " + err.Error()
+		return cmd
+	}
+	m.edConfigDirty, m.edNote = false, "saved to disk"
+	return cmd
 }
 
 func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	m.edNote = "" // any keystroke clears the transient "saved" line
 	switch key {
 	case "esc":
-		m.overlay = m.overlayReturn
-		m.overlayReturn = ovNone
+		if m.edDirty || m.edConfigDirty {
+			return m.openConfirmDiscard()
+		}
+		m.closeEditor()
 		return m, nil
 	case "tab":
 		m.edTab = (m.edTab + 1) % len(m.editorTabs())
@@ -196,7 +237,7 @@ func (m *Model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.edRow = 0
 		return m, nil
 	case m.mod + "+s", "ctrl+s":
-		return m, m.applyEdit()
+		return m, m.editorSave()
 	}
 
 	fields := m.editorFields()
@@ -474,13 +515,18 @@ func (m *Model) editorPanel() string {
 	}
 
 	b.WriteString("\n")
-	if m.edErr != "" {
+	switch {
+	case m.edErr != "":
 		b.WriteString(th.helpKey.Render("! "+m.edErr) + "\n")
-	} else if m.edDirty {
-		b.WriteString(th.helpDim.Render("unsaved changes") + "\n")
+	case m.edNote != "":
+		b.WriteString(th.helpKey.Render(m.edNote) + "\n")
+	case m.edConfigDirty:
+		b.WriteString(th.helpDim.Render("● unsaved — "+m.mod+"+s to write to disk") + "\n")
+	case m.edDirty:
+		b.WriteString(th.helpDim.Render("● unapplied edits") + "\n")
 	}
 	b.WriteString(th.helpDim.Render("↑↓ field · ←→ change · type to edit text") + "\n")
-	b.WriteString(th.helpDim.Render(m.mod + "+s / Enter apply · Esc close"))
+	b.WriteString(th.helpDim.Render("Enter apply · " + m.mod + "+s save · Esc exit"))
 	return th.helpBox.Render(b.String())
 }
 

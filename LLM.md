@@ -53,7 +53,9 @@ old configs don't fail `DisallowUnknownFields`.
 (rounded|double|heavy|ascii; ""→rounded), `Keybindings map[string]string`.
 Folded into `engine.Options` by `OptionsFromGlobal`. `config.SaveGlobalThemeStyle`
 persists just theme+style (temp-file + rename, other fields untouched) — wired to
-`Options.SaveTheme` in main.go so the engine never writes disk itself.
+`Options.SaveTheme` in main.go so the engine never writes disk itself. Likewise
+`config.Save(path, *Config)` (Validate → marshal-indent → tmp+rename) is wired to
+`Options.SaveConfig` by `cmdRun`; the editor overlay calls it on `mod+s`.
 
 Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
 the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
@@ -80,7 +82,11 @@ live preview).
   - `KeyMsg` → `handleKey`:
     1. `m.overlay` non-none swallows the key: help → Esc/F1/q/Enter/Space close
        (Ctrl+C → quit-confirm); confirm → y/Y/Enter/Ctrl+C confirm, n/N/Esc
-       cancel; settings → `handleSettingsKey` (arrows preview, Enter commits +
+       cancel (`cfDiscard`'s cancel returns to `ovEditor`, not `ovNone`);
+       editor → `handleEditorKey` (Tab tabs, ↑↓ fields, ←→ change, type edits
+       text, Enter applies live, `mod+s` applies+`SaveConfig`, Esc exits with a
+       `cfDiscard` confirm when `edDirty`/`edConfigDirty`);
+       settings → `handleSettingsKey` (arrows preview, Enter commits +
        `opts.SaveTheme`, Esc restores — both return to `overlayReturn`);
        control → `handleControlKey` (↑↓ pick, Enter opens the row, Esc closes).
     2. `isGlobalKey` (starts `mod+`, or `f1`/`f2` — NOT `f3`, which now falls

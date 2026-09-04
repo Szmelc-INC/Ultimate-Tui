@@ -28,6 +28,10 @@ type Options struct {
 	// writes to disk itself — main.go wires this to the global runner config
 	// so tests stay hermetic.
 	SaveTheme func(themeName, styleName string) error
+	// SaveConfig, when non-nil, persists the whole (edited) TUI config from the
+	// editor overlay's save key. nil in DefaultOptions and tests; main.go wires
+	// it to config.Save for `run`.
+	SaveConfig func(*config.Config) error
 }
 
 // DefaultOptions is the baseline used by New/Run/Snapshot when no global config
