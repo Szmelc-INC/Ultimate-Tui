@@ -22,6 +22,7 @@ const (
 	actHelp      = "help"
 	actSettings  = "settings"
 	actControl   = "control"
+	actContext   = "context-menu"
 	actLock      = "lock"
 	actUnlock    = "unlock"
 	actZoomIn    = "zoom-in"
@@ -52,6 +53,8 @@ var baseBinds = map[string]string{
 	"mod+-": actZoomOut,
 	"mod+_": actZoomOut,
 	"mod+0": actZoomReset,
+	// Right-click equivalent: open the focused pane's context menu.
+	"mod+w": actContext,
 }
 
 type direction int
@@ -119,6 +122,9 @@ type Model struct {
 	confirmLeaf   int // leaf index a cfKill dialog targets, captured at open time
 
 	ctrlRow int // F2 control-panel cursor row
+
+	ctxLeaf int // leaf the context menu / editor targets, captured at open time
+	ctxRow  int // context-menu cursor row
 
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)
@@ -291,6 +297,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSettingsKey(msg)
 	case ovControl:
 		return m.handleControlKey(msg)
+	case ovContext:
+		return m.handleContextKey(msg)
+	case ovEditor:
+		return m.handleEditorKey(msg)
 	}
 
 	// Global bindings win unconditionally.
@@ -396,6 +406,8 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 		m.openSettings()
 	case actControl:
 		m.openControl()
+	case actContext:
+		m.openContext(m.focus)
 	case actLock:
 		m.locked = true
 	case actUnlock:
@@ -486,6 +498,10 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if i < 0 {
 		return m, nil
 	}
+	if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
+		m.openContext(i) // target captured as ctxLeaf; focus is left where it is
+		return m, nil
+	}
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
 		if i != m.focus {
 			m.locked, m.pendingEsc = false, false
@@ -555,6 +571,10 @@ func (m *Model) View() string {
 		out = m.renderSettings(out)
 	case ovControl:
 		out = m.renderControl(out)
+	case ovContext:
+		out = m.renderContext(out)
+	case ovEditor:
+		out = m.renderEditor(out)
 	}
 	return out
 }
@@ -685,12 +705,14 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 
 // Focused returns the title (or type index) of the focused pane — handy for
 // tests and `validate`.
-func (m *Model) Focused() string {
-	lf := m.leaves[m.focus]
-	if lf.title != "" {
-		return lf.title
+func (m *Model) Focused() string { return m.leafName(m.focus) }
+
+// leafName is a leaf's title, or a positional fallback when it has none.
+func (m *Model) leafName(i int) string {
+	if i >= 0 && i < len(m.leaves) && m.leaves[i].title != "" {
+		return m.leaves[i].title
 	}
-	return fmt.Sprintf("pane#%d", m.focus)
+	return fmt.Sprintf("pane#%d", i)
 }
 
 // PaneCount reports the number of leaves.

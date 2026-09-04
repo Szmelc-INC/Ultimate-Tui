@@ -49,6 +49,20 @@ type Interrupter interface {
 	Interrupt() error
 }
 
+// Restarter is an optional interface for a widget that can tear its process
+// down and spawn it again from scratch. The engine calls Restart from the pane
+// context menu; the returned command is the fresh process's first read.
+type Restarter interface {
+	Restart() tea.Cmd
+}
+
+// Refresher is an optional interface for a widget that can force a repaint of
+// its content without a full restart (a shell pane sends Ctrl+L to its child;
+// a command pane re-runs). The engine calls Refresh from the pane context menu.
+type Refresher interface {
+	Refresh() tea.Cmd
+}
+
 // StreamMsg marks messages emitted by a widget's continuous read loop (see the
 // shell widget). engine.Snapshot uses it to avoid draining an endless stream.
 type StreamMsg interface {

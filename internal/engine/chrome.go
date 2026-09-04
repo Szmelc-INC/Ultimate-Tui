@@ -78,6 +78,7 @@ func (m *Model) helpPanel() string {
 		row("Ctrl+C", "NAV: confirm-quit  ·  LOCKED: kill this pane's process"),
 		row(m.mod+"+…", "config keybindings ("+m.mod+" = the modifier key)"),
 		row(m.mod+"+ = / - / 0", "grow / shrink / reset the focused pane"),
+		row(m.mod+"+w / right-click", "pane menu: stop · restart · refresh · edit"),
 		row("mouse", "click a pane to focus · wheel scrolls under cursor"),
 	} {
 		b.WriteString(ln)

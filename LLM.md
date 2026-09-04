@@ -29,6 +29,7 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   palettes + stylesets + memoized `theme` (theme.go), status bar (chrome.go),
   overlay enum + F1 help + Ctrl+C confirm dialog + per-pane interrupt
   (overlay.go), F2 control panel (control.go), theme/style picker (settings.go),
+  pane context menu (context.go), pane/config editor (editor.go),
   per-pane zoom math `zoomCells`/`shiftZoom` (layout.go),
   `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions` (snapshot.go).
 - `main.go` — CLI: `run`, `validate`, `render`, `config`, `version`, `help`.
@@ -58,8 +59,10 @@ Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
 the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
 indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
 locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings|ovControl`) =
-the active modal layer; `m.overlayReturn` is a one-level back target (F2 control
-panel → picker → Esc/Enter returns to F2). `leaf.zoom` = per-pane size bias in
+the active modal layer (`ovContext` = pane menu, `ovEditor` = pane/config
+editor); `m.overlayReturn` is a one-level back target (F2 control panel → picker
+→ Esc/Enter returns to F2). `m.ctxLeaf` = the leaf the context menu / editor
+targets, captured at open time (not re-read from `m.focus`). `leaf.zoom` = per-pane size bias in
 steps, folded into every ancestor split by `shiftZoom` (sum-preserving).
 `m.themeMemo` caches the resolved `theme` (`invalidateTheme()` drops it — picker
 live preview).
@@ -69,8 +72,8 @@ live preview).
 - `NewWithOptions(cfg, opts)` (`New` = defaults): key precedence
   `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through `expandMod`
   ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `tab`/`shift+tab`→focus-next/prev,
-  `f1`→help, `f2`→control, `mod+=`/`mod++`/`mod+-`/`mod+_`/`mod+0`→zoom
-  in/in/out/out/reset (focused pane). Ctrl+C, arrows, Enter, Esc are handled in
+  `f1`→help, `f2`→control, `mod+w`→context-menu, `mod+=`/`mod++`/`mod+-`/`mod+_`/
+  `mod+0`→zoom in/in/out/out/reset (focused pane). Ctrl+C, arrows, Enter, Esc are handled in
   code, not the map (Ctrl+C must never be a plain quit binding). `build()` recurses,
   instantiating widgets into `m.leaves`.
 - `Update`: `WindowSizeMsg`→store size+`ready`.
@@ -91,8 +94,11 @@ live preview).
     5. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
        when rects are stale); `enter` locks; else bound action; else forward.
   - `MouseMsg` → ignored outright while `overlayActive()`; else `handleMouse`:
-    no-op unless `rectW/rectH == bodyDims()`. Left press → focus `leafAt`, clears
-    lock if the pane changed. Wheel → forward to that leaf, no focus change.
+    no-op unless `rectW/rectH == bodyDims()`. Right press → `openContext(leafAt)`
+    (target captured, focus unchanged). Left press → focus `leafAt`, clears lock
+    if the pane changed. Wheel → forward to that leaf, no focus change. Because
+    mouse is dropped once an overlay is up, the context menu is keyboard-driven
+    (↑↓ skip greyed rows, Enter runs, Esc / mod+w close).
   - other msg → broadcast to all widgets.
 - `View`: `bodyDims()` = full size minus 1 row when the status bar shows
   (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp

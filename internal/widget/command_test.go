@@ -40,3 +40,29 @@ func TestCommandWidgetRequiresCommand(t *testing.T) {
 		t.Fatal("expected error when command is empty")
 	}
 }
+
+func TestCommandWidgetRestartReRuns(t *testing.T) {
+	w, _ := newCommand(&config.Pane{Type: "command", Command: "printf 'FIRST'", Shell: "sh"})
+	c := w.(*commandWidget)
+	w, _ = w.Update(w.Init()())
+	if got := w.View(40, 3); !strings.Contains(got, "FIRST") {
+		t.Fatalf("first run view = %q", got)
+	}
+
+	// Swap the command and Restart: a fresh run, new id, stale msg ignored.
+	oldID := c.id
+	c.command = "printf 'SECOND'"
+	cmd := c.Restart()
+	if c.id == oldID {
+		t.Fatal("Restart did not bump the widget id")
+	}
+	// A late message from the previous run must not overwrite the buffer.
+	w, _ = w.Update(cmdDoneMsg{id: oldID, output: "STALE"})
+	if got := w.View(40, 3); strings.Contains(got, "STALE") {
+		t.Fatalf("stale cmdDoneMsg leaked into the view: %q", got)
+	}
+	w, _ = w.Update(cmd())
+	if got := w.View(40, 3); !strings.Contains(got, "SECOND") {
+		t.Fatalf("post-restart view = %q", got)
+	}
+}

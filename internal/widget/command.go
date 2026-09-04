@@ -78,6 +78,19 @@ func (c *commandWidget) View(width, height int) string {
 	return c.box.view(width, height)
 }
 
+// Restart re-runs the command from scratch. A new id makes any in-flight
+// cmdDoneMsg from the previous run land as stale and be ignored.
+func (c *commandWidget) Restart() tea.Cmd {
+	c.id = cmdSeq.Add(1)
+	c.done = false
+	c.box.setText("running: " + c.command)
+	return c.Init()
+}
+
+// Refresh, for a run-once command pane, means "run it again" — there is no
+// live stream to redraw.
+func (c *commandWidget) Refresh() tea.Cmd { return c.Restart() }
+
 func (c *commandWidget) ScrollFraction() float64 { return c.box.scrollFraction() }
 
 func defaultShell() string {

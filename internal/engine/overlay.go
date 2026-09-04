@@ -17,6 +17,8 @@ const (
 	ovConfirm
 	ovSettings
 	ovControl
+	ovContext
+	ovEditor
 )
 
 // confirmKind is what a confirmed (y / Enter) confirm dialog does.

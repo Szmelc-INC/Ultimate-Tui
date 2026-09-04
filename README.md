@@ -98,7 +98,7 @@ Two modes, shown in the bottom status bar:
 
 | mode       | keys |
 |------------|------|
-| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `mod+= / mod+- / mod+0` grow / shrink / reset the focused pane · `F1` help · `F2` controls · `Ctrl+C` quit (asks first) |
+| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `mod+= / mod+- / mod+0` grow / shrink / reset the focused pane · `mod+w` (or right-click) pane menu · `F1` help · `F2` controls · `Ctrl+C` quit (asks first) |
 | **LOCKED** | every key goes to the pane's widget (scroll a `text` pane, drive `htop`/`vim` in a `shell` pane) · `Esc` releases · `Esc Esc` sends a literal `Esc` to a `shell` child · `Ctrl+C` kills **this pane's** process (asks first), program keeps running |
 
 `mod` is the modifier — **Alt** by default. Terminals cannot tell left Alt from
@@ -141,8 +141,11 @@ Font). Both are also switchable at runtime from the **`F2`** control panel, and
 
 ### Mouse
 
-On by default. **Click** a pane to focus it; **wheel** scrolls the pane under the
-cursor without moving focus. Mouse events are not yet forwarded *into* `shell`
+On by default. **Click** a pane to focus it; **right-click** opens its context
+menu (Stop · Restart · Refresh · Edit — the process rows grey out for a `text` /
+`markdown` pane); **wheel** scrolls the pane under the cursor without moving
+focus. The menu itself is keyboard-driven (`↑↓` pick, `Enter` run, `Esc` close),
+since a modal swallows the mouse. Mouse events are not yet forwarded *into* `shell`
 children, so `htop`'s own mouse doesn't work — keyboard does. Enabling mouse
 reporting disables the terminal's native text selection while ultui runs.
 
@@ -178,7 +181,8 @@ internal/widget   Widget interface + kind registry; text · markdown · command 
                   keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
                   overlays: F1 help / Ctrl+C confirm (overlay.go) + F2 control
-                  panel (control.go) + theme picker (settings.go),
+                  panel (control.go) + theme picker (settings.go) + pane menu
+                  (context.go) + pane/config editor (editor.go),
                   per-pane zoom math (layout.go), palettes + stylesets (theme.go),
                   status bar (chrome.go), bounded headless Snapshot
 main.go           run / validate / render / config CLI

@@ -100,6 +100,45 @@ func TestShellWidgetConsumesRawKeysUntilExit(t *testing.T) {
 	}
 }
 
+func TestShellWidgetRestartRespawns(t *testing.T) {
+	w, err := newShell(&config.Pane{Type: "shell", Command: "printf 'GEN-A'; sleep 0.4", Shell: "sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := w.(*shellWidget)
+	defer s.Close()
+
+	drive := func(cmd tea.Cmd, want string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for cmd != nil && time.Now().Before(deadline) {
+			if strings.Contains(stripANSI(s.View(40, 6)), want) {
+				return
+			}
+			nw, next := s.Update(cmd())
+			s, cmd = nw.(*shellWidget), next
+		}
+		if !strings.Contains(stripANSI(s.View(40, 6)), want) {
+			t.Fatalf("never saw %q:\n%s", want, s.View(40, 6))
+		}
+	}
+
+	drive(s.Init(), "GEN-A")
+
+	oldID := s.id
+	s.command = "printf 'GEN-B'; sleep 0.4"
+	cmd := s.Restart()
+	if s.id == oldID {
+		t.Fatal("Restart did not bump the widget id")
+	}
+	// A stale read from the previous pty must be ignored by the id check.
+	s.Update(shellOutMsg{id: oldID, data: []byte("STALE-XYZ")})
+	if strings.Contains(stripANSI(s.View(40, 6)), "STALE-XYZ") {
+		t.Fatal("stale shellOutMsg leaked into the emulator")
+	}
+	drive(cmd, "GEN-B")
+}
+
 func TestNormalizeGridExactShape(t *testing.T) {
 	got := normalizeGrid("ab\n\n", 5, 3)
 	lines := strings.Split(got, "\n")

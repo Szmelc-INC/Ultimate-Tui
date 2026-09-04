@@ -166,6 +166,30 @@ func (s *shellWidget) Interrupt() error {
 	return s.Close()
 }
 
+// Restart kills the current child + pty and spawns the command again on a fresh
+// emulator. The previous read goroutine, if still blocked, unblocks on the
+// closed pty and its shellOutMsg is dropped by the id check in Update. Called
+// from the pane context menu. All state mutation stays on the bubbletea
+// goroutine (Init is synchronous), matching the x/vt threading rule.
+func (s *shellWidget) Restart() tea.Cmd {
+	_ = s.Close()
+	s.exited = false
+	s.emu = nil
+	s.id = cmdSeq.Add(1)
+	s.note = "restarting: " + s.command
+	return s.Init()
+}
+
+// Refresh asks the running child to repaint by sending it Ctrl+L (form feed) —
+// the near-universal "redraw" key. A no-op once the process has exited.
+func (s *shellWidget) Refresh() tea.Cmd {
+	if s.exited || s.ptmx == nil {
+		return nil
+	}
+	_, _ = s.ptmx.Write([]byte{0x0c})
+	return nil
+}
+
 // ConsumesRawKeys is true while the process runs, so htop gets its own 'q'/F-keys
 // and the engine only reserves the prefix.
 func (s *shellWidget) ConsumesRawKeys() bool { return !s.exited }
