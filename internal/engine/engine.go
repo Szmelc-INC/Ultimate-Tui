@@ -85,6 +85,7 @@ type Model struct {
 	overlay       overlayKind
 	confirmKind   confirmKind
 	confirmPrompt string
+	confirmLeaf   int // leaf index a cfKill dialog targets, captured at open time
 
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)
@@ -203,6 +204,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		if m.overlayActive() {
+			return m, nil // a modal is up; ignore clicks / wheel behind it
+		}
 		return m.handleMouse(msg)
 
 	default:

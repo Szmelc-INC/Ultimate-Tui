@@ -83,9 +83,9 @@ it — F3 live preview).
        otherwise forward the key to the focused widget.
     5. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
        when rects are stale); `enter` locks; else bound action; else forward.
-  - `MouseMsg` → `handleMouse`: no-op unless `rectW/rectH == bodyDims()`. Left
-    press → focus `leafAt`, clears lock if the pane changed. Wheel → forward to
-    that leaf, no focus change.
+  - `MouseMsg` → ignored outright while `overlayActive()`; else `handleMouse`:
+    no-op unless `rectW/rectH == bodyDims()`. Left press → focus `leafAt`, clears
+    lock if the pane changed. Wheel → forward to that leaf, no focus change.
   - other msg → broadcast to all widgets.
 - `View`: `bodyDims()` = full size minus 1 row when the status bar shows
   (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp

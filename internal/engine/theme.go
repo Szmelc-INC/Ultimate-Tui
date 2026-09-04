@@ -133,7 +133,7 @@ var asciiBorder = lipgloss.Border{
 var stylesets = map[string]styleset{
 	"rounded": {
 		border:    lipgloss.RoundedBorder(),
-		glyphNav:  "\U000f0238 ", // nf-md-eye
+		glyphNav:  "\U000f0208 ", // nf-md-eye
 		glyphLock: " ",          // nf-fa-lock
 		bullet:    "●",           // ●
 		sep:       "  ·  ",       // ·

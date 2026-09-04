@@ -38,10 +38,13 @@ func (m *Model) openConfirmQuit() (tea.Model, tea.Cmd) {
 }
 
 // openConfirmKill raises the "kill this pane's process?" dialog. Reached by
-// Ctrl+C while a pane that hosts a killable process is locked.
-func (m *Model) openConfirmKill(name string) (tea.Model, tea.Cmd) {
+// Ctrl+C while a pane that hosts a killable process is locked. The target leaf
+// is captured now, not re-read at confirm time — a click behind the dialog
+// must not be able to redirect the kill.
+func (m *Model) openConfirmKill(idx int, name string) (tea.Model, tea.Cmd) {
 	m.overlay = ovConfirm
 	m.confirmKind = cfKill
+	m.confirmLeaf = idx
 	m.confirmPrompt = "Kill the process in " + name + "?"
 	return m, nil
 }
@@ -67,9 +70,10 @@ func (m *Model) confirmYes() (tea.Model, tea.Cmd) {
 		m.Close()
 		return m, tea.Quit
 	case cfKill:
-		lf := m.leaves[m.focus]
-		if it, ok := lf.w.(widget.Interrupter); ok {
-			_ = it.Interrupt()
+		if m.confirmLeaf >= 0 && m.confirmLeaf < len(m.leaves) {
+			if it, ok := m.leaves[m.confirmLeaf].w.(widget.Interrupter); ok {
+				_ = it.Interrupt()
+			}
 		}
 		m.locked, m.pendingEsc = false, false
 		return m, nil
@@ -83,7 +87,7 @@ func (m *Model) confirmYes() (tea.Model, tea.Cmd) {
 func (m *Model) lockedInterrupt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	lf := m.leaves[m.focus]
 	if _, ok := lf.w.(widget.Interrupter); ok {
-		return m.openConfirmKill(m.Focused())
+		return m.openConfirmKill(m.focus, m.Focused())
 	}
 	return m.forwardKey(msg)
 }

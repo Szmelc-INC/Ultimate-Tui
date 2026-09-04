@@ -230,6 +230,93 @@ func TestLockedCtrlCKillsPaneProcessNotProgram(t *testing.T) {
 	}
 }
 
+func TestModBindingFiresWhileLocked(t *testing.T) {
+	// The documented invariant: a "mod+" action is intercepted in BOTH modes,
+	// even from inside a locked RawKeyConsumer pane.
+	src := `{
+      "name": "modlock",
+      "layout": { "direction": "row", "children": [
+        { "size": "50%", "pane": { "type": "shell", "title": "sh", "command": "sleep 30" } },
+        { "size": "*", "pane": { "type": "text", "title": "note", "content": "x" } }
+      ]}
+    }`
+	cfg, err := config.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := engine.DefaultOptions()
+	opts.Keys = map[string]string{"mod+n": "focus-next"}
+	m, err := engine.NewWithOptions(cfg, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Init()
+	defer m.Close()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	m = u.(*engine.Model)
+	_ = m.View()
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // lock into the shell
+	m = u.(*engine.Model)
+	if !m.Locked() || m.Focused() != "sh" {
+		t.Fatalf("setup: locked=%v focus=%q", m.Locked(), m.Focused())
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n"), Alt: true})
+	m = u.(*engine.Model)
+	if m.Focused() != "note" {
+		t.Fatalf("alt+n did not fire its focus-next binding while locked; focus = %q", m.Focused())
+	}
+	if m.Locked() {
+		t.Fatal("focus-next should have cleared the lock")
+	}
+}
+
+func TestClickBehindKillDialogCannotRedirectIt(t *testing.T) {
+	src := `{
+      "name": "redirect",
+      "layout": { "direction": "row", "children": [
+        { "size": "50%", "pane": { "type": "shell", "title": "sh", "command": "sleep 30" } },
+        { "size": "*", "pane": { "type": "text", "title": "note", "content": "x" } }
+      ]}
+    }`
+	cfg, err := config.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Init()
+	defer m.Close()
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	m = u.(*engine.Model)
+	_ = m.View()
+
+	// Lock the shell, open the kill dialog.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "Kill the process in sh") {
+		t.Fatalf("kill dialog not shown:\n%s", m.View())
+	}
+
+	// Click on the other pane while the dialog is up — must be ignored.
+	u, _ = m.Update(tea.MouseMsg{X: 55, Y: 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = u.(*engine.Model)
+	if m.Focused() != "sh" {
+		t.Fatalf("click behind the dialog moved focus to %q", m.Focused())
+	}
+
+	// Confirm — the shell (the dialog's captured target) is what dies.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "process killed") {
+		t.Fatalf("the shell pane was not the one interrupted:\n%s", m.View())
+	}
+}
+
 func TestLockedCtrlCForwardsToPlainPane(t *testing.T) {
 	// A locked text pane has no killable process: Ctrl+C must not raise the
 	// kill dialog and must not quit — it falls through to the widget.

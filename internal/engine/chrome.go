@@ -21,13 +21,23 @@ func (m *Model) statusBar(w int) string {
 	name := m.Focused()
 	left := mode + th.bar.Render("  "+name)
 
-	hint := strings.Join([]string{
-		th.barKey.Render("↑↓←→") + th.bar.Render(" focus"),
-		th.barKey.Render("enter") + th.bar.Render(" lock"),
-		th.barKey.Render("esc") + th.bar.Render(" release"),
-		th.barKey.Render("F1") + th.bar.Render(" help"),
-		th.barKey.Render("^C") + th.bar.Render(" quit"),
-	}, th.bar.Render(th.sep))
+	var parts []string
+	if m.locked {
+		// Locked: Ctrl+C belongs to the pane, not the app.
+		parts = []string{
+			th.barKey.Render("esc") + th.bar.Render(" release"),
+			th.barKey.Render("F1") + th.bar.Render(" help"),
+			th.barKey.Render("^C") + th.bar.Render(" kill pane"),
+		}
+	} else {
+		parts = []string{
+			th.barKey.Render("↑↓←→") + th.bar.Render(" focus"),
+			th.barKey.Render("enter") + th.bar.Render(" lock"),
+			th.barKey.Render("F1") + th.bar.Render(" help"),
+			th.barKey.Render("^C") + th.bar.Render(" quit"),
+		}
+	}
+	hint := strings.Join(parts, th.bar.Render(th.sep))
 
 	gap := w - lipgloss.Width(left) - lipgloss.Width(hint)
 	if gap < 2 {
