@@ -154,6 +154,29 @@ func TestSettingsMouseClickPicksColumnAndRow(t *testing.T) {
 	}
 }
 
+// Clicking above the item list (the panel title/header rows, content-relative
+// row < 3 per settingsPanel: title(0), blank(1), column header(2)) must be a
+// no-op, not clamp into row 0 and silently apply/preview that theme — see
+// advisor review: this let a click on the panel's own heading commit a theme
+// change on Enter.
+func TestSettingsMouseClickAboveListIsNoop(t *testing.T) {
+	m := mkModel(t, oneText)
+	m.openSettings()
+	_ = m.View()
+
+	before := m.themeName
+	beforeRow := m.setRow[0]
+	u, _ := clickAt(m, colX(m, 1), rowY(m, 0)) // title row
+	m = u.(*Model)
+
+	if m.themeName != before {
+		t.Fatalf("clicking the settings panel title changed themeName from %q to %q", before, m.themeName)
+	}
+	if m.setRow[0] != beforeRow {
+		t.Fatalf("clicking the settings panel title moved setRow[0] from %d to %d", beforeRow, m.setRow[0])
+	}
+}
+
 func TestConfirmMouseClickCancelReturnsToEditor(t *testing.T) {
 	m := mkModel(t, oneText)
 	m.openPaneEditor(0)

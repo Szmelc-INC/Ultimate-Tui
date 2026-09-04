@@ -38,6 +38,44 @@ const splitSrc = `{"name":"x","layout":{"direction":"row","children":[
   {"size":"*","pane":{"type":"text","title":"R","content":"r"}}
 ]}}`
 
+// A widget-affecting edit (content change) replaces lf.w with a fresh
+// instance; the leaf's buffered content-zoom level must carry over onto that
+// new instance, not silently reset to unzoomed while the leaf still reports
+// the old level (see advisor review: mod+- would then make the pane bigger).
+func TestApplyEditReappliesContentZoomToRebuiltWidget(t *testing.T) {
+	m := mkModel(t, oneText)
+	m.setContentZoom(0, 3)
+
+	m.openPaneEditor(0)
+	m.eb.content = "changed" // widget-affecting -> applyEdit rebuilds lf.w
+	_ = m.applyEdit()
+
+	// text implements widget.Zoomer; compare the rebuilt widget's rendering
+	// against a plain unzoomed instance and against one with SetZoom(3)
+	// applied directly, rather than reaching into unexported fields.
+	unzoomed, err := widget.New(&config.Pane{Type: "text", Content: "changed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := widget.New(&config.Pane{Type: "text", Content: "changed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, ok := want.(widget.Zoomer)
+	if !ok {
+		t.Fatal("text widget does not implement widget.Zoomer")
+	}
+	z.SetZoom(3)
+
+	got := m.leaves[0].w.View(40, 10)
+	if got == unzoomed.View(40, 10) {
+		t.Fatal("rebuilt widget did not carry over the buffered content-zoom level (renders unzoomed)")
+	}
+	if got != want.View(40, 10) {
+		t.Fatal("rebuilt widget's rendering does not match SetZoom(3) applied directly")
+	}
+}
+
 func TestApplyEditRebuildsAndClosesOldWidget(t *testing.T) {
 	m := mkModel(t, oneText)
 	fake := &recWidget{}

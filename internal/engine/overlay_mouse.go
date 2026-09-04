@@ -13,6 +13,12 @@ import (
 // content-relative coordinates (past the shared border+padding every panel
 // has — see panelContentOffsetX/Y).
 func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if !m.ready {
+		// m.ovX/Y/W/H are only meaningful once splice() has stamped them from
+		// a real View() pass; before the first WindowSizeMsg they're zero and
+		// every click would misreport as "outside" the (nonexistent) box.
+		return m, nil
+	}
 	inside := msg.X >= m.ovX && msg.X < m.ovX+m.ovW && msg.Y >= m.ovY && msg.Y < m.ovY+m.ovH
 	if !inside {
 		if msg.Action == tea.MouseActionPress &&

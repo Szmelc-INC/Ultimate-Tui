@@ -654,6 +654,11 @@ func (m *Model) applyEdit() tea.Cmd {
 			_ = c.Close()
 		}
 		lf.w = newW
+		if lf.contentZoom != 0 {
+			if z, ok := newW.(widget.Zoomer); ok {
+				z.SetZoom(lf.contentZoom)
+			}
+		}
 		cmd = newW.Init()
 	}
 	m.edErr = ""

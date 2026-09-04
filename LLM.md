@@ -272,6 +272,9 @@ per-pane options blob and decode in the factory.
 - Never call `emu.Read` off the bubbletea goroutine (x/vt race). Consequence:
   terminal-query responses are not forwarded to `shell` children.
 - Leaf rects are only valid for the last-rendered size — `handleMouse` bails if
-  the stamp is stale. Same staleness guard applies to overlay panels
-  (`m.ovX/Y/W/H`, stamped by `splice()`), which is why `handleOverlayMouse`
-  only trusts them within the same render cycle they were stamped in.
+  the stamp is stale (`m.rectW/rectH` vs the current body size). `m.ovX/Y/W/H`
+  (the overlay bounding box, stamped by `splice()`) has a lighter guard:
+  `handleOverlayMouse` bails on `!m.ready` (no `View()` has run yet, so the
+  box is still zero) but does not re-check the box against the current
+  terminal size the way `handleMouse` does — a resize between one `View()`
+  and the next click is a one-frame window, not one this guard closes.

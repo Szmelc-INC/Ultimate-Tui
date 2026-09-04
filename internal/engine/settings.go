@@ -84,14 +84,26 @@ func (m *Model) settingsSetRow(col, i int) {
 // settingsMouseClick picks a column by absolute screen X against the panel's
 // horizontal midpoint (the two columns are row-aligned, so an exact per-
 // column width isn't needed) and a row from the content-relative Y — see
-// settingsPanel: title, blank, a header line, then one row per item.
+// settingsPanel: title, blank, a header line, then one row per item. Unlike
+// settingsMove (keyboard, relative — clamping into range is correct there),
+// a click outside the item list must be a no-op: settingsSetRow's clamp would
+// otherwise let a click on the title/header row (i < 0) apply row 0 as a live
+// theme/style preview.
 func (m *Model) settingsMouseClick(absX, row int) {
 	col := 0
 	if absX >= m.ovX+m.ovW/2 {
 		col = 1
 	}
+	i := row - 3
+	n := len(ThemeNames())
+	if col == 1 {
+		n = len(StyleNames())
+	}
+	if i < 0 || i >= n {
+		return
+	}
 	m.setCol = col
-	m.settingsSetRow(col, row-3)
+	m.settingsSetRow(col, i)
 }
 
 func (m *Model) renderSettings(frame string) string {
