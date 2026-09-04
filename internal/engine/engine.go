@@ -73,7 +73,9 @@ type node struct {
 }
 
 type child struct {
-	spec sizeSpec
+	spec sizeSpec      // parsed at build time; the fallback
+	cfg  *config.Child // live config slot — render re-parses Size from here so
+	// the editor can change a split ratio at runtime
 	node node
 }
 
@@ -125,6 +127,13 @@ type Model struct {
 
 	ctxLeaf int // leaf the context menu / editor targets, captured at open time
 	ctxRow  int // context-menu cursor row
+
+	// editor overlay state (editor.go)
+	eb      editBuf
+	edTab   int
+	edRow   int
+	edErr   string
+	edDirty bool
 
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)
@@ -218,7 +227,7 @@ func (m *Model) build(n *config.Node, parent *config.Child, path string) (node, 
 		if err != nil {
 			return node{}, err
 		}
-		out.children = append(out.children, child{spec: parseSize(ch.Size), node: sub})
+		out.children = append(out.children, child{spec: parseSize(ch.Size), cfg: ch, node: sub})
 	}
 	return out, nil
 }
@@ -590,7 +599,11 @@ func (m *Model) render(n node, x, y, w, h int) string {
 
 	specs := make([]sizeSpec, len(n.children))
 	for i, c := range n.children {
-		specs[i] = c.spec
+		if c.cfg != nil {
+			specs[i] = parseSize(c.cfg.Size) // reflect live edits to the ratio
+		} else {
+			specs[i] = c.spec
+		}
 	}
 	row := n.direction == "row"
 	axis := h
