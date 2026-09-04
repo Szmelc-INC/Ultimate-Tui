@@ -20,6 +20,7 @@ const (
 	ovContext
 	ovEditor
 	ovSplit
+	ovGlobal
 )
 
 // confirmKind is what a confirmed (y / Enter) confirm dialog does.

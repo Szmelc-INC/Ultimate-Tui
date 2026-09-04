@@ -214,6 +214,13 @@ type Model struct {
 	spPct    int    // percent kept by the original content; the new pane gets the rest
 	spField  int    // 0 = direction control, 1 = percent control
 
+	// F3 global settings/info panel state (global.go).
+	glMod       string
+	glStatusBar bool
+	glRow       int
+	glDirty     bool
+	glNote      string
+
 	cfg *config.Config // the config this Model was built from (editor target)
 }
 
@@ -419,6 +426,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleEditorKey(msg)
 	case ovSplit:
 		return m.handleSplitKey(msg)
+	case ovGlobal:
+		return m.handleGlobalKey(msg)
 	}
 
 	// Global bindings win unconditionally.
@@ -479,6 +488,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.locked = true
+		return m, nil
+	case "f3":
+		// Deliberately NOT in isGlobalKey (unlike F1/F2): F3 only opens from
+		// NAV, so a locked shell/vim keeps its own F3 (see isGlobalKey's doc).
+		m.openGlobalPanel()
 		return m, nil
 	}
 	if action, ok := m.keys[key]; ok {
@@ -739,6 +753,8 @@ func (m *Model) View() string {
 		out = m.renderEditor(out)
 	case ovSplit:
 		out = m.renderSplit(out)
+	case ovGlobal:
+		out = m.renderGlobal(out)
 	}
 	return out
 }

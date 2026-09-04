@@ -59,6 +59,8 @@ func cmdRun(args []string) int {
 	// the edited config back to the file it was loaded from.
 	cfgPath := args[0]
 	opts.SaveConfig = func(c *config.Config) error { return config.Save(cfgPath, c) }
+	opts.ConfigPath = cfgPath
+	opts.GlobalConfigPath = config.GlobalPath()
 	if err := engine.RunWithOptions(cfg, opts); err != nil {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
@@ -81,9 +83,11 @@ func runnerOptions() (engine.Options, error) {
 	if !engine.ValidStyleName(opts.Style) {
 		return engine.Options{}, fmt.Errorf("unknown style %q (known: %v)", opts.Style, engine.StyleNames())
 	}
-	// Let the theme/style picker (opened from the F2 control panel) persist a
-	// choice back to the global config.
+	// Let the theme/style picker (opened from the F2 control panel or F3)
+	// persist a choice back to the global config, and the F3 panel persist
+	// mod/statusbar (and whatever it saw for theme/style/keybindings).
 	opts.SaveTheme = config.SaveGlobalThemeStyle
+	opts.SaveGlobal = config.SaveGlobal
 	return opts, nil
 }
 

@@ -67,6 +67,15 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if press && msg.Button == tea.MouseButtonLeft {
 			return m.editorMouseClick(cx, cy)
 		}
+	case ovGlobal:
+		switch {
+		case press && msg.Button == tea.MouseButtonLeft:
+			return m.globalMouseClick(cy)
+		case wheelUp:
+			m.globalCycle(1)
+		case wheelDown:
+			m.globalCycle(-1)
+		}
 	}
 	return m, nil
 }

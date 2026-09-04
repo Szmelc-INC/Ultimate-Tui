@@ -37,14 +37,25 @@ func TestF2ControlPanelOpensAndCloses(t *testing.T) {
 	}
 }
 
-// F3 used to open the theme picker. It must now be inert at the engine level
-// and fall through to the focused widget (regression: a locked vim keeps F3).
-func TestF3DoesNotOpenAnOverlay(t *testing.T) {
+// F3 opens the global settings panel, but only from NAV — while a pane is
+// locked it must fall through to the focused widget untouched (a locked
+// vim/shell keeps its own F3), the same guarantee F1/F2 do NOT make.
+func TestF3OpensGlobalPanelOnlyInNav(t *testing.T) {
 	m := newModel(t, gridSrc, 90, 26)
-	base := m.View()
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyF3})
 	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "global settings — F3") {
+		t.Fatalf("F3 in NAV did not open the global panel:\n%s", m.View())
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(*engine.Model)
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // lock the focused pane
+	m = u.(*engine.Model)
+	base := m.View()
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	m = u.(*engine.Model)
 	if m.View() != base {
-		t.Fatalf("F3 opened an overlay / changed the frame:\n%s", m.View())
+		t.Fatalf("F3 while locked opened the global panel instead of falling through:\n%s", m.View())
 	}
 }

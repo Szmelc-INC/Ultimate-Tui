@@ -32,6 +32,18 @@ type Options struct {
 	// editor overlay's save key. nil in DefaultOptions and tests; main.go wires
 	// it to config.Save for `run`.
 	SaveConfig func(*config.Config) error
+	// SaveGlobal, when non-nil, persists the F3 global-settings panel's
+	// buffered mod/statusbar/theme/style/keybindings. nil in DefaultOptions
+	// and tests; main.go wires it to config.SaveGlobal.
+	SaveGlobal func(*config.GlobalConfig) error
+	// ConfigPath and GlobalConfigPath are purely informational — shown in the
+	// F3 panel's "this run" block. Engine never reads either path itself;
+	// main.go resolves them (the TUI config it loaded, config.GlobalPath())
+	// and hands over the strings, the same boundary SaveConfig/SaveTheme/
+	// SaveGlobal already draw. Both are "" for go:embed-static/Snapshot runs
+	// that never had a path to begin with.
+	ConfigPath       string
+	GlobalConfigPath string
 }
 
 // DefaultOptions is the baseline used by New/Run/Snapshot when no global config

@@ -94,6 +94,33 @@ func SaveGlobalThemeStyle(theme, style string) error {
 	return os.Rename(tmp, path)
 }
 
+// SaveGlobal writes gc to the global runner config path via a temp file +
+// rename, creating the directory if needed. Unlike SaveGlobalThemeStyle
+// (which load-mutates only theme/style, preserving everything else on disk),
+// this replaces the whole file with gc as given — the F3 global-settings
+// panel edits every field it cares about into gc itself before calling this,
+// carrying forward anything it doesn't edit (e.g. Keybindings) from what it
+// was constructed with.
+func SaveGlobal(gc *GlobalConfig) error {
+	path := GlobalPath()
+	if path == "" {
+		return fmt.Errorf("global config: no resolvable path")
+	}
+	data, err := json.MarshalIndent(gc, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // ParseGlobal decodes global-config bytes (strict JSON — unknown keys rejected).
 func ParseGlobal(data []byte) (*GlobalConfig, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
