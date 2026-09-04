@@ -192,6 +192,33 @@ func TestEditorEscCleanWhenPristine(t *testing.T) {
 	}
 }
 
+func TestApplyEditDirectionInPlace(t *testing.T) {
+	// splitSrc is a "direction":"row" split of two text panes.
+	m := mkModel(t, splitSrc)
+	_ = m.View()
+	if m.root.cfg == nil || m.root.cfg.Direction != "row" {
+		t.Fatalf("precondition: root split not row (%q)", m.root.cfg.Direction)
+	}
+
+	m.openPaneEditor(0)
+	if !m.eb.hasDir || m.eb.dir != "row" {
+		t.Fatalf("buffer did not load the split direction: hasDir=%v dir=%q", m.eb.hasDir, m.eb.dir)
+	}
+	m.eb.dir = "column"
+	_ = m.applyEdit()
+
+	if m.leaves[0].split.Direction != "" {
+		t.Fatalf("apply wrote Direction = %q, want \"\" (column)", m.leaves[0].split.Direction)
+	}
+	// render must pick up the flip: with a column split the two panes now stack,
+	// so the frame is still 24 rows but each pane spans the full 80 columns.
+	m.overlay = ovNone
+	v := m.View()
+	if lines := strings.Split(v, "\n"); len(lines) != 24 {
+		t.Fatalf("frame height = %d after direction flip", len(lines))
+	}
+}
+
 func TestParseComposeSizeRoundTrip(t *testing.T) {
 	cases := []struct {
 		in, mode string

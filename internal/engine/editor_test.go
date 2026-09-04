@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/silverx/ultimate-tui/internal/engine"
 )
@@ -122,6 +123,61 @@ func TestConfigEditorFromF2(t *testing.T) {
 	m = u.(*engine.Model)
 	if strings.Contains(m.View(), "controls — F2") {
 		t.Fatal("second Esc did not close the control panel")
+	}
+}
+
+// assertFrame checks the rendered frame is exactly w x h — no line wider or
+// narrower, no extra rows. The editor panel is the overlay most exposed to this
+// because field values are arbitrary user text.
+func assertFrame(t *testing.T, m *engine.Model, w, h int) {
+	t.Helper()
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) != h {
+		t.Fatalf("frame height = %d, want %d", len(lines), h)
+	}
+	for i, ln := range lines {
+		if x := lipgloss.Width(ln); x != w {
+			t.Fatalf("frame line %d width = %d, want %d", i, x, w)
+		}
+	}
+}
+
+func TestEditorPanelGeometry(t *testing.T) {
+	long := `{"name":"g","layout":{"pane":{"type":"text","title":"Big",
+	  "content":"line one is quite long indeed\nline two\nline three also reasonably long here\nfour"}}}`
+
+	for _, wh := range [][2]int{{100, 30}, {44, 14}} {
+		m := newModel(t, long, wh[0], wh[1])
+		m = openEditor(t, m)
+		assertFrame(t, m, wh[0], wh[1])
+
+		// Walk to the content field (Widget tab) and start typing — the active
+		// text control must not leak the value's newlines into the panel.
+		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		m = u.(*engine.Model)
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+		m = u.(*engine.Model)
+		m = typeStr(m, "xyz")
+		assertFrame(t, m, wh[0], wh[1])
+	}
+
+	// Error state: an unbuildable type change puts widget.New's message in the panel.
+	m := newModel(t, ctxSrc, 80, 20)
+	m = openEditor(t, m)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight}) // type off "text"
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+	m = u.(*engine.Model)
+	assertFrame(t, m, 80, 20)
+}
+
+func TestEditorDirectionControlPresent(t *testing.T) {
+	m := newModel(t, ctxSrc, 100, 30) // ctxSrc is a row split
+	m = openEditor(t, m)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // -> Layout tab
+	m = u.(*engine.Model)
+	if !strings.Contains(m.View(), "direction") {
+		t.Fatalf("Layout tab has no direction control:\n%s", m.View())
 	}
 }
 

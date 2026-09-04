@@ -67,9 +67,11 @@ const (
 )
 
 type node struct {
-	direction string // "" == leaf
-	children  []child
-	leaf      *leaf
+	direction string       // "" == leaf
+	cfg       *config.Node // live split node — render re-reads Direction so the
+	// editor can flip row/column at runtime
+	children []child
+	leaf     *leaf
 }
 
 type child struct {
@@ -84,12 +86,14 @@ type leaf struct {
 	border bool
 	w      widget.Widget
 
-	// pane points at the live config node this leaf was built from, and parent
-	// at the enclosing split slot (nil for the root leaf). The editor overlay
-	// reads current values through these and mutates them in place; nothing
-	// else in the engine writes to them.
+	// pane points at the live config node this leaf was built from, parent at
+	// the enclosing split slot, and split at the enclosing split node (parent
+	// and split are nil for the root leaf). The editor overlay reads current
+	// values through these and mutates them in place; nothing else in the
+	// engine writes to them.
 	pane   *config.Pane
 	parent *config.Child
+	split  *config.Node
 
 	// zoom is a per-pane size bias in steps: positive grows this pane at its
 	// siblings' expense in every ancestor split, negative shrinks it. Applied
@@ -183,7 +187,7 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 	put(cfg.Keybindings)
 	m.tuiKeys = cfg.Keybindings
 
-	root, err := m.build(&cfg.Layout, nil, "layout")
+	root, err := m.build(&cfg.Layout, nil, nil, "layout")
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +206,7 @@ func expandMod(key, mod string) string {
 	return key
 }
 
-func (m *Model) build(n *config.Node, parent *config.Child, path string) (node, error) {
+func (m *Model) build(n *config.Node, parent *config.Child, split *config.Node, path string) (node, error) {
 	if n.Pane != nil {
 		w, err := widget.New(n.Pane)
 		if err != nil {
@@ -214,6 +218,7 @@ func (m *Model) build(n *config.Node, parent *config.Child, path string) (node, 
 			w:      w,
 			pane:   n.Pane,
 			parent: parent,
+			split:  split,
 		}
 		m.leaves = append(m.leaves, lf)
 		return node{leaf: lf}, nil
@@ -223,10 +228,10 @@ func (m *Model) build(n *config.Node, parent *config.Child, path string) (node, 
 	if dir == "" {
 		dir = "column"
 	}
-	out := node{direction: dir}
+	out := node{direction: dir, cfg: n}
 	for i := range n.Children {
 		ch := &n.Children[i]
-		sub, err := m.build(&ch.Node, ch, fmt.Sprintf("%s.children[%d]", path, i))
+		sub, err := m.build(&ch.Node, ch, n, fmt.Sprintf("%s.children[%d]", path, i))
 		if err != nil {
 			return node{}, err
 		}
@@ -608,7 +613,11 @@ func (m *Model) render(n node, x, y, w, h int) string {
 			specs[i] = c.spec
 		}
 	}
-	row := n.direction == "row"
+	dir := n.direction
+	if n.cfg != nil && n.cfg.Direction != "" {
+		dir = n.cfg.Direction // reflect a live row/column edit
+	}
+	row := dir == "row"
 	axis := h
 	if row {
 		axis = w

@@ -58,7 +58,10 @@ persists just theme+style (temp-file + rename, other fields untouched) — wired
 `Options.SaveConfig` by `cmdRun`; the editor overlay calls it on `mod+s`.
 
 Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
-the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
+the live `widget.Widget`. Each carries a back-pointer to its live config source
+(`node.cfg *config.Node`, `child.cfg *config.Child`, `leaf.pane`/`leaf.parent`/
+`leaf.split`); `render` re-reads `Direction`/`Size` from those each frame so the
+editor's edits aren't frozen at build time. `m.leaves` is the tree-order focus ring; `m.focus`
 indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
 locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings|ovControl`) =
 the active modal layer (`ovContext` = pane menu, `ovEditor` = pane/config

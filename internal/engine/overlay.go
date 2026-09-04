@@ -53,13 +53,19 @@ func (m *Model) openConfirmKill(idx int, name string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleConfirmKey runs while the confirm dialog is up. y / Y / Enter (and a
-// second Ctrl+C, for muscle memory) confirm; n / N / Esc cancel; anything else
-// is ignored and the dialog stays.
+// handleConfirmKey runs while the confirm dialog is up. y / Y / Enter confirm;
+// n / N / Esc cancel; anything else is ignored and the dialog stays. A second
+// Ctrl+C also confirms quit/kill (muscle memory) — but NOT cfDiscard, where
+// "throw away unsaved edits" is the wrong thing for a stray Ctrl+C to do.
 func (m *Model) handleConfirmKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "y", "Y", "enter", "ctrl+c":
+	case "y", "Y", "enter":
 		return m.confirmYes()
+	case "ctrl+c":
+		if m.confirmKind != cfDiscard {
+			return m.confirmYes()
+		}
+		return m, nil
 	case "n", "N", "esc":
 		if m.confirmKind == cfDiscard {
 			m.overlay = ovEditor // cancel → back to the editor, edits intact

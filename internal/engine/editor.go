@@ -49,7 +49,9 @@ type editBuf struct {
 	border                 bool
 	sizeMode               string // auto | percent | fixed | flex
 	sizeVal                int
-	hasSize                bool // false for the root pane (no enclosing split)
+	dir                    string // enclosing split's direction: column | row
+	hasSize                bool   // false for the root pane (no enclosing split)
+	hasDir                 bool   // false for the root pane
 }
 
 var mdStyleChoices = []string{"", "dark", "light", "dracula", "tokyo-night", "pink", "ascii", "notty"}
@@ -85,6 +87,7 @@ func (m *Model) editorFields() []edField {
 	if m.edLogicalTab() == -1 { // Config tab
 		return []edField{
 			{key: "cfg.name", label: "name", kind: fText},
+			{key: "cfg.version", label: "version", kind: fText},
 			{key: "cfg.pane", label: "pane", kind: fSelect, choices: m.leafNames()},
 		}
 	}
@@ -96,10 +99,17 @@ func (m *Model) editorFields() []edField {
 			{key: "border", label: "border", kind: fBool},
 		}
 	case 1: // Layout
-		if !m.eb.hasSize {
+		if !m.eb.hasSize && !m.eb.hasDir {
 			return nil
 		}
-		fs := []edField{{key: "size.mode", label: "size mode", kind: fSelect, choices: sizeModeChoices}}
+		var fs []edField
+		if m.eb.hasDir {
+			fs = append(fs, edField{key: "direction", label: "direction", kind: fSelect, choices: []string{"column", "row"}})
+		}
+		if !m.eb.hasSize {
+			return fs
+		}
+		fs = append(fs, edField{key: "size.mode", label: "size mode", kind: fSelect, choices: sizeModeChoices})
 		switch m.eb.sizeMode {
 		case "percent":
 			fs = append(fs, edField{key: "size.value", label: "percent", kind: fSlider, min: 0, max: 100, step: 5})
@@ -144,6 +154,10 @@ func (m *Model) loadPane(idx int) {
 	if lf.parent != nil {
 		mode, val = parseSizeStr(lf.parent.Size)
 	}
+	dir := "column"
+	if lf.split != nil && lf.split.Direction == "row" {
+		dir = "row"
+	}
 	m.eb = editBuf{
 		typ:      p.Type,
 		title:    p.Title,
@@ -155,7 +169,9 @@ func (m *Model) loadPane(idx int) {
 		shell:    p.Shell,
 		sizeMode: mode,
 		sizeVal:  val,
+		dir:      dir,
 		hasSize:  lf.parent != nil,
+		hasDir:   lf.split != nil,
 	}
 }
 
@@ -309,8 +325,12 @@ func (m *Model) editGet(f edField) string {
 		return m.eb.sizeMode
 	case "size.value":
 		return strconv.Itoa(m.eb.sizeVal)
+	case "direction":
+		return m.eb.dir
 	case "cfg.name":
 		return m.cfg.Name
+	case "cfg.version":
+		return m.cfg.Version
 	case "cfg.pane":
 		return m.leafName(m.ctxLeaf)
 	}
@@ -331,6 +351,8 @@ func (m *Model) editSetText(key, s string) {
 		m.eb.shell = s
 	case "cfg.name":
 		m.cfg.Name = s // top-level; committed to the live config immediately
+	case "cfg.version":
+		m.cfg.Version = s
 	}
 	m.edDirty = true
 	m.edConfigDirty = true
@@ -381,6 +403,8 @@ func (m *Model) editCycle(f edField, dir int) tea.Cmd {
 			m.eb.typ = v
 		case "markdownStyle":
 			m.eb.mdStyle = v
+		case "direction":
+			m.eb.dir = v
 		case "size.mode":
 			m.eb.sizeMode = v
 			switch v {
@@ -447,9 +471,14 @@ func (m *Model) applyEdit() tea.Cmd {
 	}
 
 	oldBorder := lf.pane.Border == nil || *lf.pane.Border
+	oldDir := "column"
+	if lf.split != nil && lf.split.Direction == "row" {
+		oldDir = "row"
+	}
 	sizeChanged := lf.parent != nil && lf.parent.Size != composeSize(eb.sizeMode, eb.sizeVal)
+	dirChanged := lf.split != nil && eb.hasDir && oldDir != eb.dir
 	chromeChanged := lf.pane.Title != cand.Title || oldBorder != eb.border
-	if rebuild || sizeChanged || chromeChanged {
+	if rebuild || sizeChanged || dirChanged || chromeChanged {
 		m.edConfigDirty = true
 	}
 
@@ -458,6 +487,13 @@ func (m *Model) applyEdit() tea.Cmd {
 	lf.border = eb.border
 	if lf.parent != nil {
 		lf.parent.Size = composeSize(eb.sizeMode, eb.sizeVal)
+	}
+	if lf.split != nil && eb.hasDir {
+		if eb.dir == "row" {
+			lf.split.Direction = "row"
+		} else {
+			lf.split.Direction = "" // "" == column; keeps the saved file terse
+		}
 	}
 
 	var cmd tea.Cmd
@@ -553,7 +589,7 @@ func (m *Model) editControl(f edField, active bool) string {
 	case fText:
 		v := m.editGet(f)
 		if active {
-			return v + "▏"
+			return oneLine(v) + "▏" // one row always — newlines/overlong text can't grow the box
 		}
 		if v == "" {
 			return th.helpDim.Render("—")
