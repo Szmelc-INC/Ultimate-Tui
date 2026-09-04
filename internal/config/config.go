@@ -55,8 +55,15 @@ type Pane struct {
 	Title  string `json:"title,omitempty"`  // shown as the pane header
 	Border *bool  `json:"border,omitempty"` // nil == true
 
-	// text widget
+	// text + markdown widgets
 	Content string `json:"content,omitempty"`
+
+	// markdown widget — renders a Markdown document via glamour. Source is
+	// Content (inline) or File (a path). MarkdownStyle picks a glamour theme
+	// ("dark" default, also "light", "dracula", "tokyo-night", "pink",
+	// "ascii", "notty").
+	File          string `json:"file,omitempty"`
+	MarkdownStyle string `json:"markdownStyle,omitempty"`
 
 	// command widget — runs a non-interactive command once and streams its
 	// combined stdout/stderr into a scrollable pane. This is NOT an

@@ -13,7 +13,8 @@ design.
   config at `$XDG_CONFIG_HOME/ultui/config.json` (missing file → `nil,nil`).
 - `internal/widget` — `Widget` interface, `Register(kind, Factory)` /
   `New(*config.Pane)` registry. Kinds self-register in `init()`: `text`,
-  `command`, `shell`. `scrollBox` (scroll.go) = shared scroll/wrap/wheel.
+  `markdown` (glamour, markdown.go), `command`, `shell`. `scrollBox` (scroll.go)
+  = shared scroll/wrap/wheel.
   `keyToBytes` (keys.go) = tea.KeyMsg → xterm bytes. Optional ifaces:
   `RawKeyConsumer` (want every key), `Closer` (owns OS resources), `StreamMsg`
   (endless read-loop msg marker).
@@ -33,7 +34,8 @@ design.
 - leaf: `Pane *Pane`
 `Child` embeds `Node` + `Size string`.
 `Pane`: `Type`, `Title`, `Border *bool` (nil→true), then flat widget fields
-(`Content`; `Command`, `Shell`).
+(`Content` = text/markdown source; `File` + `MarkdownStyle` = markdown; `Command`,
+`Shell` = command/shell).
 `Config.Prefix` (json "prefix") is **deprecated and ignored** — still parsed so
 old configs don't fail `DisallowUnknownFields`.
 
@@ -87,6 +89,13 @@ Init() tea.Cmd
 Update(tea.Msg) (Widget, tea.Cmd)
 View(width, height int) string   // must return exactly width x height
 ```
+
+`markdown` widget (markdown.go): source = `Content` or `os.ReadFile(File)`.
+`View(w,h)` lazily `glamour.NewTermRenderer(WithStandardStyle(style),
+WithWordWrap(w))` — style pinned (`MarkdownStyle`, default "dark") so `render`
+output is deterministic — caches the rendered lines per width, scrolls them as
+opaque ANSI lines (no re-wrap), and forces exact w×h via `normalizeGrid` (shared
+with shell.go). `Init` is nil; not a `RawKeyConsumer`.
 
 `command` widget: `Init` returns a `tea.Cmd` running `exec.Command(shell,"-c",
 cmd).CombinedOutput()`, returns `cmdDoneMsg{id, output}`. Each instance has an

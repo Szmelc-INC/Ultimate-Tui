@@ -12,7 +12,11 @@ import (
 // title, and a right-aligned hint strip. Always exactly w cells, one line.
 func (m *Model) statusBar(w int) string {
 	th := m.theme()
-	mode := th.barMode.Render(" " + m.Mode() + " ")
+	glyph := "󰈈 " // nf: eye — navigating/looking
+	if m.locked {
+		glyph = " " // nf: lock
+	}
+	mode := th.barMode.Render(" " + glyph + m.Mode() + " ")
 
 	name := m.Focused()
 	left := mode + th.bar.Render("  "+name)

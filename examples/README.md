@@ -24,6 +24,7 @@ make render EXAMPLE=examples/<name>.json SIZE=120x36
 | **pretty.json** | pretty-print: truecolor `figlet | lolcat` banner, 256-colour and truecolor ramps, `bat` syntax highlighting, `cowsay`, plus unicode box-drawing / blocks / braille in a plain `text` pane | `120x36` |
 | **devdash.json** | a dev cockpit for this repo: `git status` + `git log --graph` (colour), `go test ./...`, an `eza`/`tree` source tree, and a TODO/FIXME grep | `130x40` |
 | **multiplex.json** | the multiplexer: `htop`, an interactive `$SHELL`, and `cmatrix` each in a live `shell` pane. Arrows/click to focus, `Enter` to lock into a pane and drive the child, `Esc` to release. **Use `ultui run`** — under `ultui render` the panes look empty because htop/cmatrix paint on a timer and the headless drain stops after ~250 ms; that is not a bug. | run it |
+| **guide.json** | the `markdown` widget: an inline glamour-rendered cheatsheet next to `README.md` loaded from a `file`. Lock a pane (`Enter`) and scroll with `j`/`k`. | `120x36` |
 | **compiled/** | the `go:embed` static build — `go build -o baked ./examples/compiled`, then `./baked` needs no config file | — |
 
 ## Notes / current limits

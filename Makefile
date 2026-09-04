@@ -2,7 +2,7 @@ BINARY := ultui
 PKG    := ./...
 EXAMPLE ?= examples/dashboard.json
 
-.PHONY: build test race test-one vet fmt tidy run validate render compiled clean
+.PHONY: build test race test-one vet fmt tidy run validate render config compiled clean
 
 build: ## compile the ultui runtime into bin/
 	go build -o bin/$(BINARY) .
@@ -31,6 +31,9 @@ run: build ## run a config (make run EXAMPLE=examples/hello.json)
 
 validate: build
 	./bin/$(BINARY) validate $(EXAMPLE)
+
+config: build ## show the global runner config path + effective settings
+	./bin/$(BINARY) config
 
 render: build ## print one headless frame (make render EXAMPLE=... SIZE=120x40)
 	./bin/$(BINARY) render $(EXAMPLE) $(or $(SIZE),100x30)

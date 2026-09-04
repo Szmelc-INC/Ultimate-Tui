@@ -1,0 +1,28 @@
+{
+  "name": "guide",
+  "version": "0.1.0",
+  "keybindings": { "mod+n": "focus-next", "mod+p": "focus-prev" },
+  "layout": {
+    "direction": "row",
+    "children": [
+      {
+        "size": "38%",
+        "pane": {
+          "type": "markdown",
+          "title": "  cheatsheet",
+          "markdownStyle": "dark",
+          "content": "# ULTIMATE TUI\n\nEvery interface is **one JSON file**. This pane is a `markdown` widget — glamour renders it.\n\n## Modes\n\n| mode | keys |\n|------|------|\n| **NAV** | arrows move focus · `Enter` locks |\n| **LOCKED** | keys drive the pane · `Esc` releases |\n\n## Widgets\n\n1. `text` — static, scrollable\n2. `command` — run once, capture output\n3. `shell` — a real pty (htop, vim…)\n4. `markdown` — *you are here*\n\n> Lock this pane and scroll with `j` / `k`.\n\n```json\n{ \"pane\": { \"type\": \"markdown\", \"file\": \"README.md\" } }\n```\n"
+        }
+      },
+      {
+        "size": "*",
+        "pane": {
+          "type": "markdown",
+          "title": "  README.md",
+          "markdownStyle": "dark",
+          "file": "README.md"
+        }
+      }
+    ]
+  }
+}

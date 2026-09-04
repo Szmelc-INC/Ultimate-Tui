@@ -81,11 +81,13 @@ covered.
 | type      | keys                      | notes |
 |-----------|---------------------------|-------|
 | `text`    | `content`                 | static text, scrolls if it overflows |
+| `markdown`| `content` or `file`, `markdownStyle` (opt) | renders Markdown with **glamour** — headings, tables, blockquotes, syntax-highlighted code. Lock the pane to scroll. `markdownStyle`: `dark` (default) · `light` · `dracula` · `tokyo-night` · `pink` · `ascii` · `notty` |
 | `command` | `command`, `shell` (opt)  | runs the command **once**, shows combined stdout+stderr, scrollable |
 | `shell`   | `command`, `shell` (opt)  | a **real interactive process** on a pty — `htop`, `vim`, `cmatrix`, `$SHELL`. Output goes through a VT emulator; keystrokes are forwarded to the child |
 
 `command` captures text; `shell` *is* a terminal. Pick `shell` when the program
-draws its own screen or needs input.
+draws its own screen or needs input. `markdown` is for documents — help pages,
+READMEs, changelogs — rendered in place.
 
 ### Keys
 
@@ -134,9 +136,9 @@ reporting disables the terminal's native text selection while ultui runs.
 | compiled (static) | `go:embed` the config + link the engine — see `examples/compiled/` |
 | compiled (dynamic)| same wrapper, read the config from a path at startup       |
 
-All modes call the same `engine.Run`. Widgets are a registry compiled into the
-engine; there is no plugin/`dlopen` mechanism, which is what makes static
-linking coherent.
+All modes call the same `engine.RunWithOptions`. Widgets are a registry compiled
+into the engine; there is no plugin/`dlopen` mechanism, which is what makes
+static linking coherent.
 
 ## Development
 
@@ -152,14 +154,14 @@ Layout:
 ```
 internal/config   schema + strict loader (Parse is the only format seam);
                   global runner config (global.go)
-internal/widget   Widget interface + kind registry; text · command · shell
-                  scrollBox (scroll.go), keyToBytes (keys.go)
+internal/widget   Widget interface + kind registry; text · markdown · command ·
+                  shell — scrollBox (scroll.go), keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
                   theme + status bar + F1 help (theme.go, chrome.go),
                   bounded headless Snapshot
 main.go           run / validate / render / config CLI
 examples/         hello · dashboard · responsive · keys · sysmon · pretty ·
-                  devdash · multiplex · compiled/   —  see examples/README.md
+                  devdash · multiplex · guide · compiled/  — see examples/README.md
 ```
 
 ## Roadmap
@@ -171,7 +173,7 @@ Not built yet, roughly in priority order:
 - Terminal-query responses (DA/CPR) forwarded to `shell` children — blocked on
   an `x/vt` concurrency limitation
 - Live/streaming and periodic `command` refresh
-- More widgets: `markdown` (glamour), `list`, `viewport`, `input`
+- More widgets: `list`, `input` / `form` (huh), `viewport`, `table`
 - `ultui compile` — codegen the wrapper + `go build` in one step
 - Shared borders between adjacent panes
 - Public `pkg/` API once it stabilises
