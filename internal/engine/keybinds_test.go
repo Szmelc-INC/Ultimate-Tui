@@ -175,7 +175,8 @@ func TestStatusBarDisabledViaOptions(t *testing.T) {
 }
 
 func TestGlobalConfigModOverride(t *testing.T) {
-	gc, err := config.ParseGlobal([]byte(`{"mod":"ctrl","statusbar":false}`))
+	gc, err := config.ParseGlobal([]byte(
+		`{"mod":"ctrl","statusbar":false,"keybindings":{"mod+n":"focus-next"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,9 +192,16 @@ func TestGlobalConfigModOverride(t *testing.T) {
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = u.(*engine.Model)
-	// With mod=ctrl, ctrl+q quits and alt+q does not.
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
-	if !isQuit(cmd) {
-		t.Fatal("ctrl+q should quit when mod=ctrl")
+	_ = m.View()
+
+	// "mod+n" with mod=ctrl expands to ctrl+n; it must be an intercepted global
+	// binding (works even without a stamped rect / while locked) and advance focus.
+	if m.Focused() != "TL" {
+		t.Fatalf("start focus = %q", m.Focused())
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	m = u.(*engine.Model)
+	if m.Focused() == "TL" {
+		t.Fatal("ctrl+n did not act as the mod-expanded focus-next binding")
 	}
 }

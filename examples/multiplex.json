@@ -13,7 +13,7 @@
         "pane": {
           "type": "text",
           "border": false,
-          "content": "  multiplex   —   arrows move focus · Enter locks into a pane · Esc releases · click / wheel with the mouse · F1 help · alt+q quit"
+          "content": "  multiplex   —   arrows move focus · Enter locks into a pane · Esc releases · click / wheel with the mouse · F1 help · Ctrl+C quit"
         }
       },
       {

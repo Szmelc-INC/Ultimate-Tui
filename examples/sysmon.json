@@ -86,7 +86,7 @@
         "pane": {
           "type": "text",
           "border": false,
-          "content": "  sysmon  ·  snapshot taken at launch — re-run to refresh  ·  arrows focus  ·  F1 help  ·  alt+q quit"
+          "content": "  sysmon  ·  snapshot taken at launch — re-run to refresh  ·  arrows focus  ·  F1 help  ·  Ctrl+C quit"
         }
       }
     ]

@@ -5,7 +5,7 @@
     "pane": {
       "type": "text",
       "title": "hello",
-      "content": "Welcome to ULTIMATE TUI.\n\nThis whole screen is one config file.\n\n  arrows / tab    move focus\n  enter           lock a pane, then j/k scroll\n  esc             release  ·  F1  help\n  alt+q           quit\n\nEdit examples/hello.json and run it again."
+      "content": "Welcome to ULTIMATE TUI.\n\nThis whole screen is one config file.\n\n  arrows / tab    move focus\n  enter           lock a pane, then j/k scroll\n  esc             release  ·  F1  help\n  F3              theme & style settings\n  Ctrl+C          quit  (asks first)\n\nEdit examples/hello.json and run it again."
     }
   }
 }

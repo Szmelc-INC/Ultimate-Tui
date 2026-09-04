@@ -154,6 +154,18 @@ func (s *shellWidget) Close() error {
 	return nil
 }
 
+// Interrupt stops the child now, as if it had exited on its own: the pane drops
+// out of raw-key mode and View shows the exit overlay. Fired by a confirmed
+// Ctrl+C on the locked pane — the program keeps running.
+func (s *shellWidget) Interrupt() error {
+	if s.exited {
+		return nil
+	}
+	s.exited = true
+	s.note = "process killed"
+	return s.Close()
+}
+
 // ConsumesRawKeys is true while the process runs, so htop gets its own 'q'/F-keys
 // and the engine only reserves the prefix.
 func (s *shellWidget) ConsumesRawKeys() bool { return !s.exited }

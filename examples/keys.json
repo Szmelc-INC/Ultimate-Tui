@@ -14,7 +14,7 @@
         "pane": {
           "type": "text",
           "title": "how keys work",
-          "content": "Two modes — the bottom bar shows which.\n\nNAV (default)\n  arrows       move focus to the pane that way\n  Tab / S-Tab  cycle focus\n  Enter        LOCK focus into this pane\n  F1           this help, as a popup\n  alt+q        quit   (alt = the modifier)\n\nLOCKED\n  every key goes to the pane's widget\n  Esc          release the lock\n  Esc Esc      literal Esc to a shell child\n\nThe engine ACTIONS a binding can name:\n  quit  focus-next  focus-prev  help  lock  unlock\n\nThis config also bound:\n  alt+n -> focus-next\n  alt+p -> focus-prev\n  alt+h -> help\n\nLock this pane (Enter) and scroll:\n  j / k    line    pgdn / pgup  page\n  g        top     Esc          release\n\nThe rounded border colour marks focus;\nit turns amber while LOCKED."
+          "content": "Two modes — the bottom bar shows which.\n\nNAV (default)\n  arrows       move focus to the pane that way\n  Tab / S-Tab  cycle focus\n  Enter        LOCK focus into this pane\n  F1           this help, as a popup\n  F3           theme & style settings\n  Ctrl+C       quit — raises a [Y/n] confirm\n\nLOCKED\n  every key goes to the pane's widget\n  Esc          release the lock\n  Esc Esc      literal Esc to a shell child\n  Ctrl+C       kill THIS pane's process (confirm)\n\nThe engine ACTIONS a binding can name:\n  quit  focus-next  focus-prev  help  settings  lock  unlock\n\nThis config also bound:\n  alt+n -> focus-next\n  alt+p -> focus-prev\n  alt+h -> help\n\nLock this pane (Enter) and scroll:\n  j / k    line    pgdn / pgup  page\n  g        top     Esc          release\n\nThe rounded border colour marks focus;\nit turns amber while LOCKED."
         }
       },
       {
@@ -46,7 +46,7 @@
                 "pane": {
                   "type": "command",
                   "title": "pane 4  —  your key map",
-                  "command": "printf '%s\\n' 'resolved bindings:' '' '  arrows        move focus' '  Tab / S-Tab   cycle focus' '  Enter / Esc   lock / release' '  alt+n / alt+p focus next / prev' '  alt+h / F1    help' '  alt+q / C-c   quit'"
+                  "command": "printf '%s\\n' 'resolved bindings:' '' '  arrows        move focus' '  Tab / S-Tab   cycle focus' '  Enter / Esc   lock / release' '  alt+n / alt+p focus next / prev' '  alt+h / F1    help' '  F3            theme & style' '  Ctrl+C        quit (confirm [Y/n])'"
                 }
               }
             ]

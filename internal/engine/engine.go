@@ -20,15 +20,16 @@ const (
 	actFocusNext = "focus-next"
 	actFocusPrev = "focus-prev"
 	actHelp      = "help"
+	actSettings  = "settings"
 	actLock      = "lock"
 	actUnlock    = "unlock"
 )
 
 // baseBinds are merged under the global options and the TUI config (config
-// wins). "mod+" is expanded to the configured modifier before use.
+// wins). "mod+" is expanded to the configured modifier before use. Ctrl+C is
+// deliberately absent — it is handled directly in handleKey (quit-confirm in
+// NAV, per-pane interrupt when locked) and must never be a plain quit binding.
 var baseBinds = map[string]string{
-	"ctrl+c":    actQuit,
-	"mod+q":     actQuit,
 	"tab":       actFocusNext,
 	"shift+tab": actFocusPrev,
 	"f1":        actHelp,
@@ -79,7 +80,10 @@ type Model struct {
 
 	locked     bool // focus is locked into the focused pane (keys go to it)
 	pendingEsc bool // one Esc seen inside a locked raw pane; a second = literal
-	helpOpen   bool
+
+	overlay       overlayKind
+	confirmKind   confirmKind
+	confirmPrompt string
 
 	rectW, rectH int // body size the leaf rectangles were computed at
 }
@@ -199,9 +203,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey implements the whole keyboard contract:
 //
-//   - The help overlay, when open, swallows every key (Esc/F1/q/Ctrl+C close it).
-//   - Global bindings (the "mod+…" set, Ctrl+C, F1) always win — even inside a
-//     locked interactive pane. That is what makes "mod" a reliable escape hatch.
+//   - A modal overlay (help, confirm dialog), when open, swallows every key.
+//   - Global bindings (the "mod+…" set, F1) always win — even inside a locked
+//     interactive pane. That is what makes "mod" a reliable escape hatch.
+//   - Ctrl+C is never a plain quit: in NAV it raises the quit-confirm dialog;
+//     while a pane is locked it interrupts that pane's process (with its own
+//     confirm) and the program keeps running.
 //   - Unlocked: arrows / Tab move focus; Enter locks into the focused pane.
 //     Unbound keys still fall through to the focused widget (text-pane scroll).
 //   - Locked: every key goes to the widget. Esc releases the lock; for a raw
@@ -210,15 +217,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	if m.helpOpen {
+	switch m.overlay {
+	case ovHelp:
 		switch key {
 		case "ctrl+c":
-			m.Close()
-			return m, tea.Quit
+			return m.openConfirmQuit()
 		case "f1", "esc", "q", "enter", " ":
-			m.helpOpen = false
+			m.overlay = ovNone
 		}
 		return m, nil
+	case ovConfirm:
+		return m.handleConfirmKey(key)
+	case ovSettings:
+		return m.handleSettingsKey(msg)
 	}
 
 	// Global bindings win unconditionally.
@@ -226,6 +237,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if action, ok := m.keys[key]; ok {
 			return m.runAction(action)
 		}
+	}
+
+	// Ctrl+C: context-sensitive, never a bare quit.
+	if key == "ctrl+c" {
+		if m.locked {
+			return m.lockedInterrupt(msg)
+		}
+		return m.openConfirmQuit()
 	}
 
 	focused := m.leaves[m.focus].w
@@ -280,9 +299,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // isGlobalKey reports whether a key is one the engine intercepts even inside a
-// locked pane: anything carrying the modifier, plus Ctrl+C and F1.
+// locked pane: anything carrying the modifier, plus F1 and F3. Ctrl+C is NOT
+// here on purpose — while locked it belongs to the pane's process.
 func (m *Model) isGlobalKey(key string) bool {
-	return key == "ctrl+c" || key == "f1" || strings.HasPrefix(key, m.mod+"+")
+	return key == "f1" || key == "f3" || strings.HasPrefix(key, m.mod+"+")
 }
 
 func (m *Model) forwardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -303,7 +323,13 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 		m.focus = (m.focus - 1 + len(m.leaves)) % len(m.leaves)
 		m.locked, m.pendingEsc = false, false
 	case actHelp:
-		m.helpOpen = true
+		if m.overlay == ovHelp {
+			m.overlay = ovNone
+		} else {
+			m.overlay = ovHelp
+		}
+	case actSettings:
+		m.openSettings()
 	case actLock:
 		m.locked = true
 	case actUnlock:
@@ -446,8 +472,13 @@ func (m *Model) View() string {
 	if m.statusBarVisible() {
 		out = lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar(m.w))
 	}
-	if m.helpOpen {
+	switch m.overlay {
+	case ovHelp:
 		out = m.renderHelp(out)
+	case ovConfirm:
+		out = m.renderConfirm(out)
+	case ovSettings:
+		out = m.renderSettings(out)
 	}
 	return out
 }

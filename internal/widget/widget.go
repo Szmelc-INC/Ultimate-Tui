@@ -41,6 +41,14 @@ type Closer interface {
 	Close() error
 }
 
+// Interrupter is an optional interface for a widget that hosts a killable
+// process. The engine calls Interrupt when the user confirms Ctrl+C on a
+// locked pane: it stops that pane's process without ending the program.
+// Distinct from Closer, which fires only on program exit.
+type Interrupter interface {
+	Interrupt() error
+}
+
 // StreamMsg marks messages emitted by a widget's continuous read loop (see the
 // shell widget). engine.Snapshot uses it to avoid draining an endless stream.
 type StreamMsg interface {

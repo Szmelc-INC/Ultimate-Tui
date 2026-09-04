@@ -140,10 +140,21 @@ func TestFocusLockGuardsInteractivePane(t *testing.T) {
 		t.Fatalf("locked pane lost focus to an arrow key; at %q", m.Focused())
 	}
 
-	// Modifier binding still quits, even while locked.
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q"), Alt: true})
-	if !isQuit(cmd) {
-		t.Fatal("mod+q did not quit from inside a locked pane")
+	// Ctrl+C while locked is NOT a global quit — it raises the per-pane
+	// interrupt confirm and the program keeps running.
+	u, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	if isQuit(cmd) {
+		t.Fatal("Ctrl+C quit the program from inside a locked pane")
+	}
+	if !strings.Contains(m.View(), "Kill the process") {
+		t.Fatalf("locked Ctrl+C did not raise the kill-confirm dialog:\n%s", m.View())
+	}
+	// 'n' cancels the kill; still locked on the shell pane.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = u.(*engine.Model)
+	if !m.Locked() || m.Focused() != "sh" {
+		t.Fatalf("cancelling the kill changed state: locked=%v focus=%q", m.Locked(), m.Focused())
 	}
 
 	// Esc on a locked raw pane buffers (Esc-Esc = literal Esc to the child), so
@@ -171,6 +182,74 @@ func TestFocusLockGuardsInteractivePane(t *testing.T) {
 	}
 }
 
+func TestLockedCtrlCKillsPaneProcessNotProgram(t *testing.T) {
+	src := `{
+      "name": "kill",
+      "layout": { "direction": "row", "children": [
+        { "size": "50%", "pane": { "type": "shell", "title": "sh", "command": "sleep 30" } },
+        { "size": "*", "pane": { "type": "text", "title": "note", "content": "x" } }
+      ]}
+    }`
+	cfg, err := config.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Init()
+	defer m.Close()
+	mm, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	m = mm.(*engine.Model)
+	_ = m.View()
+
+	// Lock into the shell, Ctrl+C, confirm with 'y'.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = u.(*engine.Model)
+
+	if isQuit(cmd) {
+		t.Fatal("confirming the pane-kill quit the whole program")
+	}
+	if m.Locked() {
+		t.Fatal("pane stayed locked after its process was killed")
+	}
+	// The pane dropped its process: the shell View shows the exit overlay.
+	if !strings.Contains(m.View(), "process killed") {
+		t.Fatalf("killed shell pane did not show its exit note:\n%s", m.View())
+	}
+	// Program is still interactive — focus still navigates.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = u.(*engine.Model)
+	if m.Focused() != "note" {
+		t.Fatalf("after pane-kill, arrow nav broke; focus = %q", m.Focused())
+	}
+}
+
+func TestLockedCtrlCForwardsToPlainPane(t *testing.T) {
+	// A locked text pane has no killable process: Ctrl+C must not raise the
+	// kill dialog and must not quit — it falls through to the widget.
+	m := newModel(t, twoCols, 60, 12)
+	_ = m.View()
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(*engine.Model)
+	if !m.Locked() {
+		t.Fatal("Enter did not lock the text pane")
+	}
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	if isQuit(cmd) {
+		t.Fatal("locked Ctrl+C on a plain pane quit the program")
+	}
+	if strings.Contains(m.View(), "Kill the process") {
+		t.Fatal("locked Ctrl+C on a plain pane raised a kill dialog")
+	}
+}
+
 func isQuit(cmd tea.Cmd) bool {
 	if cmd == nil {
 		return false
@@ -179,17 +258,42 @@ func isQuit(cmd tea.Cmd) bool {
 	return ok
 }
 
-func TestModQuitsButBareQDoesNot(t *testing.T) {
+func TestCtrlCRaisesQuitConfirm(t *testing.T) {
 	m := newModel(t, twoCols, 60, 12)
 	_ = m.View()
 
+	// No single keypress quits outright anymore.
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if isQuit(cmd) {
-		t.Fatal("bare 'q' should no longer quit")
+		t.Fatal("bare 'q' should not quit")
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q"), Alt: true})
-	if !isQuit(cmd) {
-		t.Fatal("mod+q (alt+q) should quit")
+	if isQuit(cmd) {
+		t.Fatal("mod+q must no longer quit")
 	}
-	_ = strings.TrimSpace("")
+
+	// Ctrl+C opens a confirm dialog instead of quitting.
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	if isQuit(cmd) {
+		t.Fatal("Ctrl+C quit outright; it must ask first")
+	}
+	if !strings.Contains(m.View(), "Quit ultui?") {
+		t.Fatalf("Ctrl+C did not raise the quit-confirm dialog:\n%s", m.View())
+	}
+
+	// 'n' cancels — still running, dialog gone.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = u.(*engine.Model)
+	if strings.Contains(m.View(), "Quit ultui?") {
+		t.Fatal("'n' did not dismiss the quit-confirm dialog")
+	}
+
+	// Ctrl+C again, then Enter confirms.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(*engine.Model)
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !isQuit(cmd) {
+		t.Fatal("Enter in the quit-confirm dialog did not quit")
+	}
 }

@@ -26,7 +26,7 @@ func (m *Model) statusBar(w int) string {
 		th.barKey.Render("enter") + th.bar.Render(" lock"),
 		th.barKey.Render("esc") + th.bar.Render(" release"),
 		th.barKey.Render("F1") + th.bar.Render(" help"),
-		th.barKey.Render(m.mod+"+q") + th.bar.Render(" quit"),
+		th.barKey.Render("^C") + th.bar.Render(" quit"),
 	}, th.bar.Render("  ·  "))
 
 	gap := w - lipgloss.Width(left) - lipgloss.Width(hint)
@@ -64,9 +64,11 @@ func (m *Model) helpPanel() string {
 		row("Esc", "release the focus lock"),
 		row("Esc Esc", "send a literal Esc to a locked shell/editor"),
 		row("F1", "toggle this help"),
-		row(m.mod+"+q", "quit  ("+m.mod+" = the modifier key)"),
-		row("Ctrl+C", "force quit"),
+		row("F3", "theme & style settings"),
+		row("Ctrl+C", "NAV: confirm-quit  ·  LOCKED: kill this pane's process"),
+		row(m.mod+"+…", "config keybindings ("+m.mod+" = the modifier key)"),
 		row("mouse", "click a pane to focus · wheel scrolls under cursor"),
+		row("zoom", "Ctrl +/- is your terminal's font zoom, not ultui"),
 	} {
 		b.WriteString(ln)
 		b.WriteString("\n")

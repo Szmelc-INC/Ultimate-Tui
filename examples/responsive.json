@@ -66,7 +66,7 @@
         "pane": {
           "type": "text",
           "border": false,
-          "content": "  responsive-layout  ·  arrows focus  ·  enter lock + j/k scroll  ·  F1 help  ·  alt+q quit"
+          "content": "  responsive-layout  ·  arrows focus  ·  enter lock + j/k scroll  ·  F1 help  ·  Ctrl+C quit"
         }
       }
     ]
