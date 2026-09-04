@@ -19,7 +19,7 @@ make render EXAMPLE=examples/<name>.json SIZE=120x36
 | **hello.json** | the smallest possible TUI — one `text` pane | `80x20` |
 | **dashboard.json** | nested `row` / `column` / `row` splits, `command` panes with live `ps` / `df` | `100x28` |
 | **responsive.json** | the sizing model side by side: `25%` fraction, `30` fixed cells, `*` flex; borderless header + footer strips. Reflows to any size — run it at three. | `70x20`, `120x30`, `200x50` |
-| **keys.json** | config-driven interactivity: custom `keybindings` (`mod+`-prefixed → focus), Enter to lock a pane then scroll it (`j`/`k`, `pgdn`, `g`), focus ring with the highlighted rounded border, F1 help popup | `120x28` |
+| **keys.json** | config-driven interactivity: custom `keybindings` (`mod+`-prefixed → focus), Enter to lock a pane then scroll it (`j`/`k`, `pgdn`, `g`), focus ring with the highlighted border, F1 help popup, F3 theme/style picker | `120x30` |
 | **sysmon.json** | dense real-world composition — CPU / memory / disk / net / processes in one grid, each a shell snapshot taken at launch. ANSI colour from `ip -c` passes straight through. | `130x34` |
 | **pretty.json** | pretty-print: truecolor `figlet | lolcat` banner, 256-colour and truecolor ramps, `bat` syntax highlighting, `cowsay`, plus unicode box-drawing / blocks / braille in a plain `text` pane | `120x36` |
 | **devdash.json** | a dev cockpit for this repo: `git status` + `git log --graph` (colour), `go test ./...`, an `eza`/`tree` source tree, and a TODO/FIXME grep | `130x40` |
@@ -34,9 +34,15 @@ make render EXAMPLE=examples/<name>.json SIZE=120x36
   pane for anything that redraws itself (`watch`, `htop`, `top -d1`).
 - **`shell` panes are real terminals.** They only receive the keyboard while the
   pane is **locked** (press `Enter`); `Esc` releases, `Esc Esc` sends a literal
-  `Esc` to the child. `alt+…` / `F1` / `Ctrl+C` always reach ultui. Mouse is not
-  forwarded into the child yet. Apps that block waiting for a terminal-query
-  reply may misbehave; `htop`/`vim`/`less`/`cmatrix`/`btop` are fine.
+  `Esc` to the child. `mod+…` / `F1` / `F3` always reach ultui. `Ctrl+C` while
+  locked kills *that pane's* process (with a `[Y/n]` confirm), not ultui; in NAV
+  it raises the quit confirm. Mouse is not forwarded into the child yet. Apps
+  that block waiting for a terminal-query reply may misbehave;
+  `htop`/`vim`/`less`/`cmatrix`/`btop` are fine.
+- **`F3` picks the theme & style live.** Colour palette (`auto`, `tokyo-night`,
+  `gruvbox`, `slate`, `midnight`) × styleset (`rounded`, `double`, `heavy`,
+  `ascii`). `Enter` saves the choice to `~/.config/ultui/config.json`. Preview a
+  combo headlessly with `ultui render <cfg> theme=NAME style=NAME`.
 - **ANSI colour survives** in `command` output; force it on (`--color=always`,
   `CLICOLOR_FORCE=1`, `lolcat -f`) since the child's stdout is a pipe, not a tty.
   Very long coloured lines can wrap mid-escape and look slightly ragged.

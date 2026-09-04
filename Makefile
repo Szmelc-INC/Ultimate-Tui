@@ -35,8 +35,8 @@ validate: build
 config: build ## show the global runner config path + effective settings
 	./bin/$(BINARY) config
 
-render: build ## print one headless frame (make render EXAMPLE=... SIZE=120x40)
-	./bin/$(BINARY) render $(EXAMPLE) $(or $(SIZE),100x30)
+render: build ## print one headless frame (make render EXAMPLE=... SIZE=120x40 [THEME=gruvbox] [STYLE=double])
+	./bin/$(BINARY) render $(EXAMPLE) $(or $(SIZE),100x30) $(if $(THEME),theme=$(THEME)) $(if $(STYLE),style=$(STYLE))
 
 compiled: ## build the go:embed static-linked demo
 	go build -o bin/baked ./examples/compiled

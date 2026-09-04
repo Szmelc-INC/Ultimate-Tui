@@ -77,6 +77,8 @@ func runnerOptions() (engine.Options, error) {
 	if !engine.ValidStyleName(opts.Style) {
 		return engine.Options{}, fmt.Errorf("unknown style %q (known: %v)", opts.Style, engine.StyleNames())
 	}
+	// Let the F3 settings menu persist a choice back to the global config.
+	opts.SaveTheme = config.SaveGlobalThemeStyle
 	return opts, nil
 }
 

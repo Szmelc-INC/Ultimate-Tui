@@ -33,6 +33,7 @@ var baseBinds = map[string]string{
 	"tab":       actFocusNext,
 	"shift+tab": actFocusPrev,
 	"f1":        actHelp,
+	"f3":        actSettings,
 }
 
 type direction int
@@ -88,6 +89,12 @@ type Model struct {
 	themeName string // resolved colour-palette name (see theme.go)
 	styleName string // resolved styleset name (border + glyphs)
 	themeMemo *theme // built lazily by theme(); invalidateTheme() drops it
+
+	// F3 settings-menu state.
+	setCol        int    // 0 = theme column, 1 = style column
+	setRow        [2]int // cursor row per column
+	setSavedTheme string // theme/style active when the menu opened (Esc restores)
+	setSavedStyle string
 
 	rectW, rectH int // body size the leaf rectangles were computed at
 }

@@ -25,7 +25,7 @@ make build                              # -> bin/ultui
 │- processes               │└────────────────────────────────┘└────────────────────────────────┘
 │- disk                    │┌──────────────────────────────────────────────────────────────────┐
 │tab: cycle panes          ││processes (top by rss)                                            │
-│q:   quit                 ││    PID   RSS COMMAND                                              │
+│^C:  quit                 ││    PID   RSS COMMAND                                              │
 └──────────────────────────┘└──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,9 +43,9 @@ typos surface.
 }
 ```
 
-Bindings map a key to `quit` / `focus-next` / `focus-prev` / `help` / `lock` /
-`unlock`. A `mod+` prefix expands to the modifier key (default **Alt** — set by
-the global runner config, see below).
+Bindings map a key to `quit` / `focus-next` / `focus-prev` / `help` /
+`settings` / `lock` / `unlock`. A `mod+` prefix expands to the modifier key
+(default **Alt** — set by the global runner config, see below).
 
 ### Nodes
 
@@ -98,15 +98,19 @@ Two modes, shown in the bottom status bar:
 
 | mode       | keys |
 |------------|------|
-| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `F1` help · `mod+q` quit · `Ctrl+C` force quit |
-| **LOCKED** | every key goes to the pane's widget (scroll a `text` pane, drive `htop`/`vim` in a `shell` pane) · `Esc` releases · `Esc Esc` sends a literal `Esc` to a `shell` child |
+| **NAV** (default) | `↑ ↓ ← →` move focus to the pane in that direction · `Tab` / `Shift+Tab` cycle · `Enter` **locks** focus into the pane · `F1` help · `F3` theme & style · `Ctrl+C` quit (asks first) |
+| **LOCKED** | every key goes to the pane's widget (scroll a `text` pane, drive `htop`/`vim` in a `shell` pane) · `Esc` releases · `Esc Esc` sends a literal `Esc` to a `shell` child · `Ctrl+C` kills **this pane's** process (asks first), program keeps running |
 
 `mod` is the modifier — **Alt** by default. Terminals cannot tell left Alt from
-right Alt, so any Alt press counts. `mod+…` and `F1` and `Ctrl+C` are caught
-even while a pane is LOCKED, so there is always a way out.
+right Alt, so any Alt press counts. `mod+…`, `F1` and `F3` are caught even while
+a pane is LOCKED. `Ctrl+C` is **not** a bare quit: in NAV it raises a `[Y/n]`
+confirm dialog, and while LOCKED it belongs to the pane (kills just that
+process, on confirm). The way out of a locked pane is `Esc` then `Ctrl+C`.
 
 **`F1`** opens a centered popup listing every active binding — the engine's plus
-this TUI's own `keybindings`.
+this TUI's own `keybindings`. **`F3`** opens a live theme & style picker:
+`↑↓` preview, `←→` switch column, `Enter` applies (and saves to the global
+config), `Esc` reverts.
 
 ### Global runner config
 
@@ -118,10 +122,16 @@ to **every** TUI you run. All keys optional; a missing file is fine. Run
 {
   "mod": "alt",                 // modifier for "mod+" bindings: alt | ctrl | ...
   "statusbar": true,            // bottom mode/hint bar (auto-hidden under 6 rows)
-  "theme": "",                  // "", "dark", "light"  (""=auto-detect)
+  "theme": "auto",              // auto | tokyo-night | gruvbox | slate | midnight
+  "style": "rounded",           // rounded | double | heavy | ascii  (border + glyphs)
   "keybindings": { "mod+/": "help" }   // merged under every TUI's own bindings
 }
 ```
+
+`theme` is the colour palette (`""` / `dark` / `light` all mean auto-detect);
+`style` is the box-drawing + glyph set (`ascii` for terminals without a Nerd
+Font). Both are also switchable at runtime with **`F3`**, and
+`ultui render <cfg> theme=NAME style=NAME` previews a combo headlessly.
 
 ### Mouse
 
@@ -161,8 +171,9 @@ internal/widget   Widget interface + kind registry; text · markdown · command 
                   shell — scrollBox = bubbles/viewport (scroll.go),
                   keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
-                  theme + status bar + F1 help (theme.go, chrome.go),
-                  bounded headless Snapshot
+                  overlays: F1 help / Ctrl+C confirm (overlay.go) + F3 theme
+                  picker (settings.go), palettes + stylesets (theme.go),
+                  status bar (chrome.go), bounded headless Snapshot
 main.go           run / validate / render / config CLI
 examples/         hello · dashboard · responsive · keys · sysmon · pretty ·
                   devdash · multiplex · guide · compiled/  — see examples/README.md

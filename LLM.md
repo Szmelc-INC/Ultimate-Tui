@@ -18,13 +18,17 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   to width in `View`, so exact-size is safe); `g`/`home` → top, `G`/`end` →
   bottom, everything else delegates to the viewport KeyMap.
   `keyToBytes` (keys.go) = tea.KeyMsg → xterm bytes. Optional ifaces:
-  `RawKeyConsumer` (want every key), `Closer` (owns OS resources), `StreamMsg`
-  (endless read-loop msg marker), `ScrollProgress` (`ScrollFraction() float64`
-  0..1 → engine appends `NN%` to the pane title when > 0).
+  `RawKeyConsumer` (want every key), `Closer` (owns OS resources, freed on
+  program exit), `Interrupter` (`Interrupt() error` — kill just this pane's
+  process on a confirmed locked Ctrl+C; shell impl sets `exited` + "process
+  killed" note), `StreamMsg` (endless read-loop msg marker), `ScrollProgress`
+  (`ScrollFraction() float64` 0..1 → engine appends `NN%` to the pane title).
 - `internal/engine` — `sizeSpec`/`parseSize`/`distribute` (layout.go), `Model`
   (bubbletea root, engine.go: focus-lock state machine + directional focus +
   mouse hit-test), `Options`/`DefaultOptions`/`OptionsFromGlobal` (options.go),
-  `theme` palette (theme.go), status bar + F1 help overlay (chrome.go),
+  palettes + stylesets + memoized `theme` (theme.go), status bar (chrome.go),
+  overlay enum + F1 help + Ctrl+C confirm dialog + per-pane interrupt
+  (overlay.go), F3 theme/style picker (settings.go),
   `Run`/`RunWithOptions` (run.go), `Snapshot`/`SnapshotWithOptions` (snapshot.go).
 - `main.go` — CLI: `run`, `validate`, `render`, `config`, `version`, `help`.
   `run`/`render` load the global config via `config.LoadGlobal` →
@@ -43,30 +47,41 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
 old configs don't fail `DisallowUnknownFields`.
 
 `GlobalConfig`: `Mod` (""→"alt"), `StatusBar *bool` (nil→true), `Theme`
-(""|"dark"|"light"), `Keybindings map[string]string`. Folded into
-`engine.Options` by `OptionsFromGlobal`.
+(auto|tokyo-night|gruvbox|slate|midnight; ""/"dark"/"light"→auto), `Style`
+(rounded|double|heavy|ascii; ""→rounded), `Keybindings map[string]string`.
+Folded into `engine.Options` by `OptionsFromGlobal`. `config.SaveGlobalThemeStyle`
+persists just theme+style (temp-file + rename, other fields untouched) — wired to
+`Options.SaveTheme` in main.go so the engine never writes disk itself.
 
 Engine mirrors the layout into unexported `node`/`child`/`leaf`; `leaf.w` holds
 the live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus`
 indexes it. `m.locked` = focus lock; `m.pendingEsc` = one Esc buffered inside a
-locked raw pane; `m.helpOpen` = F1 overlay.
+locked raw pane. `m.overlay` (`ovNone|ovHelp|ovConfirm|ovSettings`) = the active
+modal layer; `m.themeMemo` caches the resolved `theme` (`invalidateTheme()` drops
+it — F3 live preview).
 
 ## Control flow
 
 - `NewWithOptions(cfg, opts)` (`New` = defaults): key precedence
   `baseBinds` < `opts.Keys` < `cfg.Keybindings`, each run through `expandMod`
-  ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `ctrl+c`/`mod+q`→quit,
-  `tab`/`shift+tab`→focus-next/prev, `f1`→help. Arrows/Enter/Esc are handled in
-  code, not the map. `build()` recurses, instantiating widgets into `m.leaves`.
+  ("mod+X" → "<opts.Mod>+X"). `baseBinds` = `tab`/`shift+tab`→focus-next/prev,
+  `f1`→help, `f3`→settings. Ctrl+C, arrows, Enter, Esc are handled in code, not
+  the map (Ctrl+C must never be a plain quit binding). `build()` recurses,
+  instantiating widgets into `m.leaves`.
 - `Update`: `WindowSizeMsg`→store size+`ready`.
   - `KeyMsg` → `handleKey`:
-    1. help open → only Esc/F1/q/Enter/Space (close) or Ctrl+C (quit) act.
-    2. `isGlobalKey` (starts `mod+`, or `ctrl+c`/`f1`) → run bound action even
-       when locked. This is the guaranteed escape hatch.
-    3. locked → `esc` releases (raw pane: first `esc` buffers, `esc esc` forwards
+    1. `m.overlay` non-none swallows the key: help → Esc/F1/q/Enter/Space close
+       (Ctrl+C → quit-confirm); confirm → y/Y/Enter/Ctrl+C confirm, n/N/Esc
+       cancel; settings → `handleSettingsKey` (arrows preview, Enter commits +
+       `opts.SaveTheme`, Esc restores).
+    2. `isGlobalKey` (starts `mod+`, or `f1`/`f3`) → run bound action even when
+       locked. Ctrl+C is deliberately NOT global.
+    3. `ctrl+c` → locked: `lockedInterrupt` (pane has `widget.Interrupter` →
+       kill-confirm dialog, else forward the key); unlocked: `openConfirmQuit`.
+    4. locked → `esc` releases (raw pane: first `esc` buffers, `esc esc` forwards
        a literal Esc, any other key after a lone buffered esc releases + re-runs);
        otherwise forward the key to the focused widget.
-    4. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
+    5. unlocked → arrows = `focusDir` (nearest pane that way, ring-order fallback
        when rects are stale); `enter` locks; else bound action; else forward.
   - `MouseMsg` → `handleMouse`: no-op unless `rectW/rectH == bodyDims()`. Left
     press → focus `leafAt`, clears lock if the pane changed. Wheel → forward to
@@ -74,14 +89,15 @@ locked raw pane; `m.helpOpen` = F1 overlay.
   - other msg → broadcast to all widgets.
 - `View`: `bodyDims()` = full size minus 1 row when the status bar shows
   (`opts.StatusBar && h>=6`). `render` the tree into the body, stamp
-  `rectW/rectH` to the body size, append `statusBar(w)`, then if `helpOpen`
-  splice `helpPanel()` centered via `overlayCenter` (ANSI-safe, `x/ansi` Truncate
-  + TruncateLeft). `render(n,x,y,w,h)` recurses tracking absolute origin; each
-  leaf stores its rect (`x,y,pw,ph`).
+  `rectW/rectH` to the body size, append `statusBar(w)`, then splice the active
+  overlay (`renderHelp`/`renderConfirm`/`renderSettings`) centered via
+  `overlayCenter` (ANSI-safe, `x/ansi` Truncate + TruncateLeft). `render(n,x,y,w,h)`
+  recurses tracking absolute origin; each leaf stores its rect (`x,y,pw,ph`).
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
   row) — when `lf.title != ""` it gets a `ScrollProgress` `NN%` suffix and, if
-  focused+locked, a `● LOCKED` suffix; rounded border, colour by focus/lock
-  state (`theme.go`). Body = `widget.View(innerW, bodyH)`. Wrap in
+  focused+locked, a `<bullet> LOCKED` suffix; border + glyphs from the resolved
+  styleset, colours from the palette (`theme.go`). Body = `widget.View(innerW,
+  bodyH)`. Wrap in
   `lipgloss.NewStyle().Width(innerW).Height(innerH)` + border.
   **Do NOT add `MaxWidth/MaxHeight` on the bordered style** — lipgloss clips the
   final output incl. border and shears the bottom/right edge. lipgloss
@@ -149,11 +165,13 @@ per-pane options blob and decode in the factory.
   overflow, it clamps to 0 and may look wrong. `Validate` DOES reject a split
   whose child percentages sum > 100.
 - A config can remap a key but can't *unbind* a default (same-key remap only).
-- Unlocked, the engine owns arrows/Tab/Enter and every bound key; other keys
-  fall through to the focused widget. Locked, only `isGlobalKey` (mod+…, F1,
-  Ctrl+C) and `esc` are intercepted — everything else goes to the widget. A
-  `RawKeyConsumer` pane only receives raw keys **while locked**, so the user must
-  press Enter to drive `htop`/`vim`; `mod+…` is always a way out.
+- Unlocked, the engine owns arrows/Tab/Enter/Ctrl+C and every bound key; other
+  keys fall through to the focused widget. Locked, only `isGlobalKey` (mod+…,
+  F1, F3), `ctrl+c` (→ per-pane interrupt) and `esc` are intercepted —
+  everything else goes to the widget. A `RawKeyConsumer` pane only receives raw
+  keys **while locked**, so the user must press Enter to drive `htop`/`vim`.
+  Ctrl+C never quits outright (NAV: confirm dialog; LOCKED: kills that pane's
+  process); the way out of a locked pane is Esc then Ctrl+C.
 - `engine.New/Run/Snapshot` stay pure (default options). The global config is
   loaded in `main.go` only, so tests never touch `~/.config`.
 - Status bar eats the last row (`bodyDims`); `rectW/rectH` are stamped to the

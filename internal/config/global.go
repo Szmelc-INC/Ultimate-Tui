@@ -59,6 +59,41 @@ func LoadGlobal() (*GlobalConfig, error) {
 	return ParseGlobal(data)
 }
 
+// SaveGlobalThemeStyle writes theme and style into the global runner config,
+// leaving every other field (mod, statusbar, keybindings) untouched. It loads
+// the current file, mutates only those two keys, and swaps the file in via a
+// temp file + rename so a crash mid-write cannot truncate the config. The
+// directory is created if the file does not exist yet. An empty value clears
+// that key.
+func SaveGlobalThemeStyle(theme, style string) error {
+	path := GlobalPath()
+	if path == "" {
+		return fmt.Errorf("global config: no resolvable path")
+	}
+	g, err := LoadGlobal()
+	if err != nil {
+		return err
+	}
+	if g == nil {
+		g = &GlobalConfig{}
+	}
+	g.Theme, g.Style = theme, style
+
+	data, err := json.MarshalIndent(g, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // ParseGlobal decodes global-config bytes (strict JSON — unknown keys rejected).
 func ParseGlobal(data []byte) (*GlobalConfig, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))

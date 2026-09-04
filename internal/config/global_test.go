@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/silverx/ultimate-tui/internal/config"
@@ -41,6 +43,54 @@ func TestParseGlobalRejectsUnknownKey(t *testing.T) {
 func TestParseGlobalRejectsBadJSON(t *testing.T) {
 	if _, err := config.ParseGlobal([]byte(`{"mod":`)); err == nil {
 		t.Fatal("malformed JSON should error")
+	}
+}
+
+func TestSaveGlobalThemeStylePreservesOtherFields(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	// Seed a config that carries fields the F3 save must not clobber.
+	seed := `{"mod":"ctrl","statusbar":false,"keybindings":{"mod+n":"focus-next"}}`
+	if err := os.MkdirAll(filepath.Join(dir, "ultui"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ultui", "config.json"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.SaveGlobalThemeStyle("gruvbox", "double"); err != nil {
+		t.Fatalf("SaveGlobalThemeStyle: %v", err)
+	}
+
+	g, err := config.LoadGlobal()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if g.Theme != "gruvbox" || g.Style != "double" {
+		t.Fatalf("theme/style not written: %+v", g)
+	}
+	if g.Mod != "ctrl" || g.StatusBar == nil || *g.StatusBar {
+		t.Fatalf("mod/statusbar clobbered: %+v", g)
+	}
+	if g.Keybindings["mod+n"] != "focus-next" {
+		t.Fatalf("keybindings clobbered: %v", g.Keybindings)
+	}
+}
+
+func TestSaveGlobalThemeStyleCreatesMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	if err := config.SaveGlobalThemeStyle("midnight", "ascii"); err != nil {
+		t.Fatalf("SaveGlobalThemeStyle on missing file: %v", err)
+	}
+	g, err := config.LoadGlobal()
+	if err != nil || g == nil {
+		t.Fatalf("reload after create: g=%v err=%v", g, err)
+	}
+	if g.Theme != "midnight" || g.Style != "ascii" {
+		t.Fatalf("fields = %+v", g)
 	}
 }
 
