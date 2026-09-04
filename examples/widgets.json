@@ -1,0 +1,36 @@
+{
+  "name": "widgets",
+  "layout": {
+    "direction": "row",
+    "children": [
+      {
+        "size": "34%",
+        "pane": {
+          "type": "list",
+          "title": " menu",
+          "items": ["Dashboard", "Settings", "Logs", "Help", "Quit"]
+        }
+      },
+      {
+        "size": "33%",
+        "pane": {
+          "type": "input",
+          "title": " search",
+          "placeholder": "type to search…"
+        }
+      },
+      {
+        "size": "33%",
+        "pane": {
+          "type": "form",
+          "title": " new task",
+          "fields": [
+            { "key": "title", "label": "Title" },
+            { "key": "priority", "label": "Priority", "type": "select", "options": ["low", "medium", "high"] },
+            { "key": "done", "label": "Done already?", "type": "confirm" }
+          ]
+        }
+      }
+    ]
+  }
+}

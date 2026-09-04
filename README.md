@@ -87,13 +87,20 @@ covered.
 | `markdown`| `content` or `file`, `markdownStyle` (opt) | renders Markdown with **glamour** — headings, tables, blockquotes, syntax-highlighted code. Lock the pane to scroll. `markdownStyle`: `dark` (default, also what `auto`/`""` resolve to) · `light` · `dracula` · `tokyo-night` · `pink` · `ascii` · `notty`. A relative `file` is resolved against ultui's working directory, and `validate` fails if it is missing. |
 | `command` | `command`, `shell` (opt)  | runs the command **once**, shows combined stdout+stderr, scrollable |
 | `shell`   | `command`, `shell` (opt)  | a **real interactive process** on a pty — `htop`, `vim`, `cmatrix`, `$SHELL`. Output goes through a VT emulator; keystrokes are forwarded to the child |
+| `input`   | `content` (initial value, opt), `placeholder` (opt) | a single-line editable field (**bubbles/textinput**) — lock the pane to type into it |
+| `list`    | `items` (string array)   | a browsable, filterable list (**bubbles/list**) — `/` filters, arrows/`j`/`k` move once locked |
+| `form`    | `fields` (array of `key`, `label`, `type`, `options`) | a config-driven form (**huh**) of `text` (default) / `confirm` / `select` (needs `options`) fields. Lock the pane, `Tab`/`Enter` between fields; submitting shows the collected values — there's no scripting layer yet for a widget to act on them, so this is the building block a later "run this with these values" feature would read from. Context menu → **Restart** clears it back to a blank form |
 
 `command` captures text; `shell` *is* a terminal. Pick `shell` when the program
 draws its own screen or needs input. `markdown` is for documents — help pages,
-READMEs, changelogs — rendered in place.
+READMEs, changelogs — rendered in place. `input`/`list`/`form` are the
+bubbles/huh-backed interactive widgets — `examples/widgets.json` shows all
+three side by side.
 
 `text`, `command` and `markdown` panes scroll (backed by **bubbles/viewport**)
 and show a `NN%` position marker in their title once the content overflows.
+`input`/`list`/`form` own their own scrolling/editing via their bubbles/huh
+component directly and don't go through that shared scroll box.
 
 ### Keys
 
@@ -239,7 +246,8 @@ Layout:
 internal/config   schema + strict loader (Parse is the only format seam);
                   global runner config (global.go)
 internal/widget   Widget interface + kind registry; text · markdown · command ·
-                  shell — scrollBox = bubbles/viewport (scroll.go),
+                  shell · input (bubbles/textinput) · list (bubbles/list) ·
+                  form (huh) — scrollBox = bubbles/viewport (scroll.go),
                   keyToBytes (keys.go)
 internal/engine   layout math, bubbletea model, focus-lock + mouse routing,
                   identity-preserving tree rebuild (rebuild.go), resize /
@@ -262,7 +270,7 @@ Not built yet, roughly in priority order:
 
 - Mouse forwarded *into* `shell` children (SGR sequences to the pty)
 - Content zoom (`mod+=/-/0`) for widgets other than `text` — `markdown`/
-  `command`/`shell` currently ignore it
+  `command`/`shell`/`input`/`list`/`form` currently ignore it
 - Terminal-query responses (DA/CPR) forwarded to `shell` children — blocked on
   an `x/vt` concurrency limitation
 - Live/streaming and periodic `command` refresh

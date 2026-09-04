@@ -38,6 +38,28 @@ const splitSrc = `{"name":"x","layout":{"direction":"row","children":[
   {"size":"*","pane":{"type":"text","title":"R","content":"r"}}
 ]}}`
 
+// The pane editor has no UI for a list pane's "items" (or a form pane's
+// "fields", or an input pane's "placeholder") — applyEdit's cand := *lf.pane
+// is a full struct copy, so an edit to an unrelated field (title, here) must
+// leave them exactly as parsed, not zero them out (the failure mode would
+// look like the contentZoom bug above: a field this code path doesn't know
+// about silently lost across an edit).
+func TestApplyEditPreservesListItemsAcrossUnrelatedEdit(t *testing.T) {
+	src := `{"name":"x","layout":{"pane":{"type":"list","title":"T","items":["a","b","c"]}}}`
+	m := mkModel(t, src)
+
+	m.openPaneEditor(0)
+	m.eb.title = "renamed"
+	_ = m.applyEdit()
+
+	if got := m.leaves[0].pane.Items; len(got) != 3 || got[0] != "a" {
+		t.Fatalf("pane.Items after an unrelated edit = %v, want [a b c] preserved", got)
+	}
+	if m.leaves[0].pane.Title != "renamed" {
+		t.Fatalf("pane.Title = %q, want %q", m.leaves[0].pane.Title, "renamed")
+	}
+}
+
 // A widget-affecting edit (content change) replaces lf.w with a fresh
 // instance; the leaf's buffered content-zoom level must carry over onto that
 // new instance, not silently reset to unzoomed while the leaf still reports

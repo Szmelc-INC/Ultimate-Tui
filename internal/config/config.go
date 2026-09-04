@@ -70,6 +70,32 @@ type Pane struct {
 	// interactive terminal (no pty, no vim/htop); that is a separate feature.
 	Command string `json:"command,omitempty"`
 	Shell   string `json:"shell,omitempty"` // default: $SHELL, else "sh"
+
+	// input widget — a single-line editable field (bubbles/textinput).
+	// Content is the initial value; Placeholder shows while empty.
+	Placeholder string `json:"placeholder,omitempty"`
+
+	// list widget — a browsable, filterable list (bubbles/list) of plain
+	// item labels.
+	Items []string `json:"items,omitempty"`
+
+	// form widget — a config-driven form (huh) of text/confirm/select
+	// fields. There is no scripting/command layer yet for a widget to act on
+	// a submitted value, so submission just displays the collected values —
+	// the building block a later "run this with these values" feature would
+	// read from.
+	Fields []FormField `json:"fields,omitempty"`
+}
+
+// FormField is one field of a form widget. Type selects the huh field kind:
+// "text" (default) is a single-line input, "confirm" a yes/no toggle,
+// "select" a list of Options. Key names the field in the submitted-values
+// summary; it must be unique within a form and is required.
+type FormField struct {
+	Key     string   `json:"key"`
+	Label   string   `json:"label,omitempty"`
+	Type    string   `json:"type,omitempty"`
+	Options []string `json:"options,omitempty"` // "select" only
 }
 
 // Load reads and parses a config file.

@@ -25,6 +25,7 @@ make render EXAMPLE=examples/<name>.json SIZE=120x36
 | **devdash.json** | a dev cockpit for this repo: `git status` + `git log --graph` (colour), `go test ./...`, an `eza`/`tree` source tree, and a TODO/FIXME grep | `130x40` |
 | **multiplex.json** | the multiplexer: `htop`, an interactive `$SHELL`, and `cmatrix` each in a live `shell` pane. Arrows/click to focus, `Enter` to lock into a pane and drive the child, `Esc` to release. **Use `ultui run`** — under `ultui render` the panes look empty because htop/cmatrix paint on a timer and the headless drain stops after ~250 ms; that is not a bug. | run it |
 | **guide.json** | the `markdown` widget: an inline glamour-rendered cheatsheet next to `README.md` loaded from a `file` (relative to the working dir — run from the repo root). Lock a pane (`Enter`) and scroll with `j`/`k`; the title shows a `NN%` marker. | `120x36` |
+| **widgets.json** | the bubbles/huh-backed widgets side by side: `list` (a browsable, filterable menu), `input` (a single-line editable field), `form` (a `text` + `select` + `confirm` field group via **huh**). Lock a pane (`Enter`) to type/navigate; submitting the form shows the collected values. | `120x36` |
 | **compiled/** | the `go:embed` static build — `go build -o baked ./examples/compiled`, then `./baked` needs no config file | — |
 
 ## Notes / current limits
@@ -48,6 +49,11 @@ make render EXAMPLE=examples/<name>.json SIZE=120x36
   itself saves the modifier key / status-bar toggle (takes effect next run).
   Preview a theme/style combo headlessly with
   `ultui render <cfg> theme=NAME style=NAME`.
+- **`input`/`list`/`form` need the pane locked (`Enter`) to type or navigate
+  within them** — like every other widget, arrows/Enter are only handed to
+  the focused widget once locked; unlocked they still move pane focus.
+  `list`'s own `q`/`ctrl+c` quit keybindings are disabled so a keypress
+  inside the pane can't kill the whole program.
 - **ANSI colour survives** in `command` output; force it on (`--color=always`,
   `CLICOLOR_FORCE=1`, `lolcat -f`) since the child's stdout is a pipe, not a tty.
   Very long coloured lines can wrap mid-escape and look slightly ragged.

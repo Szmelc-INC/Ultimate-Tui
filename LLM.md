@@ -1,8 +1,8 @@
 # LLM.md — ULTIMATE TUI, compressed for coding agents
 
 Status: MVP. Go module `github.com/silverx/ultimate-tui`, Go 1.26. Direct deps:
-bubbletea, lipgloss, bubbles (viewport), glamour, creack/pty,
-charmbracelet/x/{vt,ansi}. No plugin system by design.
+bubbletea, lipgloss, bubbles (viewport, textinput, list), huh, glamour,
+creack/pty, charmbracelet/x/{vt,ansi}. No plugin system by design.
 
 ## Package map
 
@@ -15,15 +15,33 @@ charmbracelet/x/{vt,ansi}. No plugin system by design.
   `SaveGlobal()` (replace the whole file — F3) both temp-file+rename.
 - `internal/widget` — `Widget` interface, `Register(kind, Factory)` /
   `New(*config.Pane)` registry. Kinds self-register in `init()`: `text`,
-  `markdown` (glamour, markdown.go), `command`, `shell`. `scrollBox` (scroll.go)
-  = shared scroll/wrap/wheel, backed by `bubbles/viewport` (it truncates lines
-  to width in `View`, so exact-size is safe); `g`/`home` → top, `G`/`end` →
-  bottom, everything else delegates to the viewport KeyMap.
-  `keyToBytes` (keys.go) = tea.KeyMsg → xterm bytes. Optional ifaces:
-  `RawKeyConsumer` (want every key), `Closer` (owns OS resources, freed on
-  program exit), `Interrupter` (`Interrupt() error` — kill just this pane's
-  process on a confirmed locked Ctrl+C; shell impl sets `exited` + "process
-  killed" note), `StreamMsg` (endless read-loop msg marker), `ScrollProgress`
+  `markdown` (glamour, markdown.go), `command`, `shell`, `input`
+  (bubbles/textinput, input.go), `list` (bubbles/list, list.go), `form`
+  (huh, form.go). `scrollBox` (scroll.go) = shared scroll/wrap/wheel, backed
+  by `bubbles/viewport` (it truncates lines to width in `View`, so exact-size
+  is safe); `g`/`home` → top, `G`/`end` → bottom, everything else delegates
+  to the viewport KeyMap. `input`/`list`/`form` embed their bubbles/huh
+  component directly instead — it already owns scrolling/editing/filtering,
+  so `scrollBox` would be redundant. Three gotchas from hosting a
+  third-party bubbletea component as a *sub*-model rather than the whole
+  program (see also the matching CLAUDE.md Architecture decisions bullet):
+  (1) `tea.WindowSizeMsg` never reaches a widget — `engine.Model.Update`
+  consumes it to size the layout tree and returns before the `default:`
+  broadcast to leaves runs — so `list.SetSize`/`huh.Form.WithWidth,WithHeight`/
+  `textinput.Width` are set every `View(w,h)` call instead, same pattern as
+  `renderLeaf` re-reading `Size`/`Direction` every frame elsewhere; (2)
+  `bubbles/list`'s default keymap binds `q`/`ctrl+c` to `tea.Quit` —
+  `newList` calls `DisableQuitKeybindings()` or a keypress in one pane kills
+  the whole multi-pane program; (3) cursor blink (and `huh.Form`'s own
+  internal field messages) needs every `tea.Msg` forwarded to
+  `Update`, not just `KeyMsg`/`MouseMsg` the way `text`/`command` filter —
+  `inputWidget`/`listWidget`/`formWidget.Update` forward unconditionally, and
+  engine.go's `default:` broadcast is what delivers those ticks. `keyToBytes`
+  (keys.go) = tea.KeyMsg → xterm bytes. Optional ifaces: `RawKeyConsumer`
+  (want every key), `Closer` (owns OS resources, freed on program exit),
+  `Interrupter` (`Interrupt() error` — kill just this pane's process on a
+  confirmed locked Ctrl+C; shell impl sets `exited` + "process killed"
+  note), `StreamMsg` (endless read-loop msg marker), `ScrollProgress`
   (`ScrollFraction() float64` 0..1 → engine appends `NN%` to the pane title),
   `Zoomer` (`SetZoom(level int)` — per-pane content scale, `mod+=/-/0`; `text`
   implements it via `bigfont.go`'s 3x5 block-glyph font, nothing else does).
