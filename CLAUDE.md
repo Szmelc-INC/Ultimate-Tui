@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rule precedence
+
+The user's global rules (`~/.claude/CLAUDE.md`, "Golden Rules — Token-Efficient Agentic Work") always apply and **win any conflict with this file**. In short: match model+effort to task difficulty (cheap model for mechanical work, strong model + high effort only for real thinking); grep/glob before Read and read only the needed range; never re-read a file just to verify an edit; batch independent tool calls; stop when you have the answer; verify programmatically (targeted tests/compile), not by eye; keep the context prefix stable. Anything below that contradicts those rules is overridden.
+
 ## Project status
 
 MVP built. Go module `github.com/silverx/ultimate-tui` (Go 1.26). A config renders end to end: recursive row/column splits; `text`, `markdown`, `command`, and interactive `shell` (pty) widgets; focus ring; a **NAV/LOCKED** focus model (arrows = directional focus, Enter locks a pane, Esc releases, `Esc Esc` = literal Esc to a child); `mod+`-prefixed keybindings (`mod` = Alt by default); **Ctrl+C = confirm-quit in NAV / kill-this-pane's-process when LOCKED** (no bare quit); an F1 help popup; an **F3 live theme & style picker** (named colour palettes × border/glyph stylesets, persisted to the global config); a bottom status bar; a **global runner config** at `~/.config/ultui/config.json` (`ultui config` to inspect); mouse (click-to-focus, wheel-scroll); three run modes (runtime / headless / go:embed-static). `DESIGN.md` is the vision; `README.md` and `LLM.md` document what actually exists; `optimal-mode.md` is a token-budget ruleset.
@@ -93,4 +97,6 @@ The project expects two parallel docs, kept in sync with the code:
 
 ## Token discipline
 
-`optimal-mode.md` is an opt-in "eco mode" ruleset: pinpoint context with `rg`/`fd`/`sed` before reading; never `cat` a >250-line file just for context; keep reasoning effort low unless the task genuinely needs more; terminal-style output with zero filler; take the explicit `[Bypass: requires deep context]` escape hatch rather than looping on retries.
+The global golden rules (see **Rule precedence**) are always in force here — the "free savings" (batch calls, grep before read, don't re-read after edits, stop when you know, cheap model for mechanical work) are not optional.
+
+`optimal-mode.md` is an *additional* opt-in "eco mode" layer that tightens the ratchet further: pinpoint context with `rg`/`fd`/`sed` before reading; never `cat` a >250-line file just for context; keep reasoning effort low unless the task genuinely needs more; terminal-style output with zero filler; take the explicit `[Bypass: requires deep context]` escape hatch rather than looping on retries. If eco mode and the global rules ever disagree, the global rule "never cut reasoning quality to save tokens" wins.
