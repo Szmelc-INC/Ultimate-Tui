@@ -85,6 +85,10 @@ type Model struct {
 	confirmKind   confirmKind
 	confirmPrompt string
 
+	themeName string // resolved colour-palette name (see theme.go)
+	styleName string // resolved styleset name (border + glyphs)
+	themeMemo *theme // built lazily by theme(); invalidateTheme() drops it
+
 	rectW, rectH int // body size the leaf rectangles were computed at
 }
 
@@ -99,7 +103,13 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 	if opts.Mod == "" {
 		opts.Mod = "alt"
 	}
-	m := &Model{keys: map[string]string{}, opts: opts, mod: opts.Mod}
+	m := &Model{
+		keys:      map[string]string{},
+		opts:      opts,
+		mod:       opts.Mod,
+		themeName: resolveThemeName(opts.Theme),
+		styleName: resolveStyleName(opts.Style),
+	}
 
 	put := func(src map[string]string) {
 		for k, v := range src {
@@ -542,7 +552,7 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 		}
 	}
 	if focused && m.locked {
-		title = strings.TrimSpace(title + "  ● LOCKED")
+		title = strings.TrimSpace(title + "  " + th.bullet + " LOCKED")
 	}
 	if title != "" {
 		// One line, always: collapse newlines and let MaxWidth truncate. A
@@ -579,7 +589,7 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	// output *including* the border, shearing off the bottom/right edge.
 	box := lipgloss.NewStyle().Width(innerW).Height(innerH)
 	if lf.border {
-		box = box.Border(lipgloss.RoundedBorder())
+		box = box.Border(th.border)
 		switch {
 		case focused && m.locked:
 			box = box.BorderForeground(th.borderLock)

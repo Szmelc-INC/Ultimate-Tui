@@ -12,9 +12,9 @@ import (
 // title, and a right-aligned hint strip. Always exactly w cells, one line.
 func (m *Model) statusBar(w int) string {
 	th := m.theme()
-	glyph := "󰈈 " // nf: eye — navigating/looking
+	glyph := th.glyphNav
 	if m.locked {
-		glyph = " " // nf: lock
+		glyph = th.glyphLock
 	}
 	mode := th.barMode.Render(" " + glyph + m.Mode() + " ")
 
@@ -27,12 +27,12 @@ func (m *Model) statusBar(w int) string {
 		th.barKey.Render("esc") + th.bar.Render(" release"),
 		th.barKey.Render("F1") + th.bar.Render(" help"),
 		th.barKey.Render("^C") + th.bar.Render(" quit"),
-	}, th.bar.Render("  ·  "))
+	}, th.bar.Render(th.sep))
 
 	gap := w - lipgloss.Width(left) - lipgloss.Width(hint)
 	if gap < 2 {
 		// Too narrow for the full hint strip — keep the mode + name only.
-		return th.bar.Width(w).MaxWidth(w).Render(ansi.Truncate(mode+th.bar.Render("  "+name), w, "…"))
+		return th.bar.Width(w).MaxWidth(w).Render(ansi.Truncate(mode+th.bar.Render("  "+name), w, th.ellipsis))
 	}
 	return left + th.bar.Render(strings.Repeat(" ", gap)) + hint
 }

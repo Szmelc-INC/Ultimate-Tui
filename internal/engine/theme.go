@@ -1,14 +1,25 @@
 package engine
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"sort"
 
-// theme is the resolved palette + styles for one run. Colours are
-// lipgloss.AdaptiveColor so a dark or light terminal both read well; the
-// engine picks the variant automatically unless Options.Theme forces one.
+	"github.com/charmbracelet/lipgloss"
+)
+
+// theme is the fully-resolved palette + styleset for one run: concrete colours,
+// a border, and the glyphs the chrome draws with. Built once per (themeName,
+// styleName) pair and memoized on the Model.
 type theme struct {
 	borderIdle  lipgloss.TerminalColor
 	borderFocus lipgloss.TerminalColor
 	borderLock  lipgloss.TerminalColor
+
+	border    lipgloss.Border
+	glyphNav  string
+	glyphLock string
+	bullet    string
+	sep       string
+	ellipsis  string
 
 	title      lipgloss.Style
 	titleFocus lipgloss.Style
@@ -23,40 +34,248 @@ type theme struct {
 	helpDesc    lipgloss.Style
 	helpSection lipgloss.Style
 	helpDim     lipgloss.Style
+
+	menuSel    lipgloss.Style
+	menuItem   lipgloss.Style
+	menuColHdr lipgloss.Style
 }
 
-var (
-	colSubtle  = lipgloss.AdaptiveColor{Light: "#9AA0A6", Dark: "#5C6370"}
-	colAccent  = lipgloss.AdaptiveColor{Light: "#6C4CE0", Dark: "#B4A0FF"}
-	colAccent2 = lipgloss.AdaptiveColor{Light: "#0B7285", Dark: "#63D2E0"}
-	colWarn    = lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#F2A65A"}
-	colText    = lipgloss.AdaptiveColor{Light: "#1F2328", Dark: "#E6E6E6"}
-	colBarBg   = lipgloss.AdaptiveColor{Light: "#ECECFF", Dark: "#2A2740"}
+// palette is the semantic colour set a named theme provides. Named themes use
+// concrete lipgloss.Color; the "auto" palette uses AdaptiveColor so a light or
+// dark terminal both read well.
+type palette struct {
+	subtle  lipgloss.TerminalColor
+	accent  lipgloss.TerminalColor
+	accent2 lipgloss.TerminalColor
+	warn    lipgloss.TerminalColor
+	text    lipgloss.TerminalColor
+	barBg   lipgloss.TerminalColor
+	modeFg  lipgloss.TerminalColor // text drawn on the accent-coloured mode chip
+}
+
+// styleset is the non-colour half of a theme: box-drawing border + the glyphs
+// the status bar / pane titles use. Presets range from Nerd-Font-rich to pure
+// 7-bit ASCII for terminals without a patched font.
+type styleset struct {
+	border    lipgloss.Border
+	glyphNav  string
+	glyphLock string
+	bullet    string
+	sep       string
+	ellipsis  string
+}
+
+const (
+	defaultThemeName = "auto"
+	defaultStyleName = "rounded"
 )
 
-func (m *Model) theme() theme {
-	// Options.Theme could pin light/dark here later; lipgloss already adapts to
-	// the detected background, which covers the common case.
-	t := theme{
-		borderIdle:  colSubtle,
-		borderFocus: colAccent,
-		borderLock:  colWarn,
+var palettes = map[string]palette{
+	"auto": {
+		subtle:  lipgloss.AdaptiveColor{Light: "#9AA0A6", Dark: "#5C6370"},
+		accent:  lipgloss.AdaptiveColor{Light: "#6C4CE0", Dark: "#B4A0FF"},
+		accent2: lipgloss.AdaptiveColor{Light: "#0B7285", Dark: "#63D2E0"},
+		warn:    lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#F2A65A"},
+		text:    lipgloss.AdaptiveColor{Light: "#1F2328", Dark: "#E6E6E6"},
+		barBg:   lipgloss.AdaptiveColor{Light: "#ECECFF", Dark: "#2A2740"},
+		modeFg:  lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#101010"},
+	},
+	"tokyo-night": {
+		subtle:  lipgloss.Color("#565f89"),
+		accent:  lipgloss.Color("#7aa2f7"),
+		accent2: lipgloss.Color("#7dcfff"),
+		warn:    lipgloss.Color("#ff9e64"),
+		text:    lipgloss.Color("#c0caf5"),
+		barBg:   lipgloss.Color("#24283b"),
+		modeFg:  lipgloss.Color("#1a1b26"),
+	},
+	"gruvbox": {
+		subtle:  lipgloss.Color("#928374"),
+		accent:  lipgloss.Color("#fabd2f"),
+		accent2: lipgloss.Color("#8ec07c"),
+		warn:    lipgloss.Color("#fe8019"),
+		text:    lipgloss.Color("#ebdbb2"),
+		barBg:   lipgloss.Color("#3c3836"),
+		modeFg:  lipgloss.Color("#282828"),
+	},
+	"slate": {
+		subtle:  lipgloss.Color("#64748b"),
+		accent:  lipgloss.Color("#38bdf8"),
+		accent2: lipgloss.Color("#2dd4bf"),
+		warn:    lipgloss.Color("#fb7185"),
+		text:    lipgloss.Color("#e2e8f0"),
+		barBg:   lipgloss.Color("#1e293b"),
+		modeFg:  lipgloss.Color("#0f172a"),
+	},
+	"midnight": {
+		subtle:  lipgloss.Color("#6b7280"),
+		accent:  lipgloss.Color("#8b5cf6"),
+		accent2: lipgloss.Color("#22d3ee"),
+		warn:    lipgloss.Color("#f472b6"),
+		text:    lipgloss.Color("#e5e7eb"),
+		barBg:   lipgloss.Color("#14142b"),
+		modeFg:  lipgloss.Color("#0a0a1a"),
+	},
+}
+
+// themeAliases map legacy / convenience names onto a real palette.
+var themeAliases = map[string]string{
+	"":      "auto",
+	"dark":  "auto",
+	"light": "auto",
+}
+
+var asciiBorder = lipgloss.Border{
+	Top: "-", Bottom: "-", Left: "|", Right: "|",
+	TopLeft: "+", TopRight: "+", BottomLeft: "+", BottomRight: "+",
+}
+
+var stylesets = map[string]styleset{
+	"rounded": {
+		border:    lipgloss.RoundedBorder(),
+		glyphNav:  "\U000f0238 ", // nf-md-eye
+		glyphLock: " ",          // nf-fa-lock
+		bullet:    "●",           // ●
+		sep:       "  ·  ",       // ·
+		ellipsis:  "…",           // …
+	},
+	"double": {
+		border:    lipgloss.DoubleBorder(),
+		glyphNav:  "◈ ", // ◈
+		glyphLock: "◆ ", // ◆
+		bullet:    "◆",  // ◆
+		sep:       "  ·  ",
+		ellipsis:  "…",
+	},
+	"heavy": {
+		border:    lipgloss.ThickBorder(),
+		glyphNav:  "● ", // ●
+		glyphLock: "■ ", // ■
+		bullet:    "■",  // ■
+		sep:       "  ·  ",
+		ellipsis:  "…",
+	},
+	"ascii": {
+		border:    asciiBorder,
+		glyphNav:  "> ",
+		glyphLock: "# ",
+		bullet:    "*",
+		sep:       "  |  ",
+		ellipsis:  "...",
+	},
+}
+
+var styleAliases = map[string]string{
+	"":       "rounded",
+	"normal": "rounded",
+	"thick":  "heavy",
+	"bold":   "heavy",
+}
+
+// resolveThemeName / resolveStyleName fold aliases and fall back to the default
+// for an unknown name (main.go rejects unknown names up front; the engine stays
+// defensive so a hand-set Model never panics).
+func resolveThemeName(name string) string {
+	if a, ok := themeAliases[name]; ok {
+		name = a
 	}
-	t.title = lipgloss.NewStyle().Bold(true).Foreground(colSubtle)
-	t.titleFocus = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
+	if _, ok := palettes[name]; !ok {
+		return defaultThemeName
+	}
+	return name
+}
 
-	t.bar = lipgloss.NewStyle().Background(colBarBg).Foreground(colText)
-	t.barKey = lipgloss.NewStyle().Background(colBarBg).Foreground(colAccent2).Bold(true)
-	t.barMode = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#101010")).Bold(true)
+func resolveStyleName(name string) string {
+	if a, ok := styleAliases[name]; ok {
+		name = a
+	}
+	if _, ok := stylesets[name]; !ok {
+		return defaultStyleName
+	}
+	return name
+}
 
-	t.helpBox = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colAccent).
-		Padding(1, 3)
-	t.helpTitle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
-	t.helpSection = lipgloss.NewStyle().Bold(true).Foreground(colAccent2)
-	t.helpKey = lipgloss.NewStyle().Bold(true).Foreground(colText)
-	t.helpDesc = lipgloss.NewStyle().Foreground(colText)
-	t.helpDim = lipgloss.NewStyle().Foreground(colSubtle).Italic(true)
+// ValidThemeName / ValidStyleName report whether a user-supplied name is
+// accepted (including "" and aliases). main.go uses these to fail loudly on a
+// typo, consistent with the strict-JSON config decision.
+func ValidThemeName(name string) bool {
+	if _, ok := themeAliases[name]; ok {
+		return true
+	}
+	_, ok := palettes[name]
+	return ok
+}
+
+func ValidStyleName(name string) bool {
+	if _, ok := styleAliases[name]; ok {
+		return true
+	}
+	_, ok := stylesets[name]
+	return ok
+}
+
+// ThemeNames / StyleNames list the canonical (non-alias) names, sorted, with
+// the default first. Used by `ultui config` and the F3 settings menu.
+func ThemeNames() []string { return namesWithDefaultFirst(palettes, defaultThemeName) }
+func StyleNames() []string { return namesWithDefaultFirst(stylesets, defaultStyleName) }
+
+func namesWithDefaultFirst[V any](m map[string]V, first string) []string {
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if k != first {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	return append([]string{first}, rest...)
+}
+
+// theme resolves + memoizes the styles for the Model's current theme/style
+// names. invalidateTheme() drops the memo so the F3 menu's live preview redraws.
+func (m *Model) theme() theme {
+	if m.themeMemo == nil {
+		t := buildTheme(m.themeName, m.styleName)
+		m.themeMemo = &t
+	}
+	return *m.themeMemo
+}
+
+func (m *Model) invalidateTheme() { m.themeMemo = nil }
+
+func buildTheme(themeName, styleName string) theme {
+	pal := palettes[resolveThemeName(themeName)]
+	ss := stylesets[resolveStyleName(styleName)]
+
+	t := theme{
+		borderIdle:  pal.subtle,
+		borderFocus: pal.accent,
+		borderLock:  pal.warn,
+
+		border:    ss.border,
+		glyphNav:  ss.glyphNav,
+		glyphLock: ss.glyphLock,
+		bullet:    ss.bullet,
+		sep:       ss.sep,
+		ellipsis:  ss.ellipsis,
+	}
+
+	t.title = lipgloss.NewStyle().Bold(true).Foreground(pal.subtle)
+	t.titleFocus = lipgloss.NewStyle().Bold(true).Foreground(pal.accent)
+
+	t.bar = lipgloss.NewStyle().Background(pal.barBg).Foreground(pal.text)
+	t.barKey = lipgloss.NewStyle().Background(pal.barBg).Foreground(pal.accent2).Bold(true)
+	t.barMode = lipgloss.NewStyle().Background(pal.accent).Foreground(pal.modeFg).Bold(true)
+
+	t.helpBox = lipgloss.NewStyle().Border(ss.border).BorderForeground(pal.accent).Padding(1, 3)
+	t.helpTitle = lipgloss.NewStyle().Bold(true).Foreground(pal.accent)
+	t.helpSection = lipgloss.NewStyle().Bold(true).Foreground(pal.accent2)
+	t.helpKey = lipgloss.NewStyle().Bold(true).Foreground(pal.text)
+	t.helpDesc = lipgloss.NewStyle().Foreground(pal.text)
+	t.helpDim = lipgloss.NewStyle().Foreground(pal.subtle).Italic(true)
+
+	t.menuColHdr = lipgloss.NewStyle().Bold(true).Foreground(pal.accent2)
+	t.menuItem = lipgloss.NewStyle().Foreground(pal.text)
+	t.menuSel = lipgloss.NewStyle().Bold(true).Foreground(pal.modeFg).Background(pal.accent)
+
 	return t
 }

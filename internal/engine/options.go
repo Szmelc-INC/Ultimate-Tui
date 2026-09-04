@@ -14,8 +14,12 @@ type Options struct {
 	// StatusBar draws a one-line mode/hint bar along the bottom edge. Skipped
 	// automatically when the terminal is shorter than 6 rows.
 	StatusBar bool
-	// Theme selects the colour palette: "dark", "light", or "" for auto.
+	// Theme selects the colour palette: "auto" (default), "tokyo-night",
+	// "gruvbox", "slate", "midnight" — or "" / "dark" / "light" for auto.
 	Theme string
+	// Style selects the styleset (border + glyphs): "rounded" (default),
+	// "double", "heavy", "ascii".
+	Style string
 	// Keys are extra global bindings (already "mod+"-expanded or literal),
 	// layered under the TUI config's own keybindings.
 	Keys map[string]string
@@ -42,6 +46,9 @@ func OptionsFromGlobal(gc *config.GlobalConfig) Options {
 	}
 	if gc.Theme != "" {
 		o.Theme = gc.Theme
+	}
+	if gc.Style != "" {
+		o.Style = gc.Style
 	}
 	if len(gc.Keybindings) > 0 {
 		o.Keys = map[string]string{}

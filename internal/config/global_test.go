@@ -7,11 +7,11 @@ import (
 )
 
 func TestParseGlobalValid(t *testing.T) {
-	g, err := config.ParseGlobal([]byte(`{"mod":"ctrl","statusbar":false,"theme":"dark","keybindings":{"mod+/":"help"}}`))
+	g, err := config.ParseGlobal([]byte(`{"mod":"ctrl","statusbar":false,"theme":"gruvbox","style":"double","keybindings":{"mod+/":"help"}}`))
 	if err != nil {
 		t.Fatalf("ParseGlobal: %v", err)
 	}
-	if g.Mod != "ctrl" || g.Theme != "dark" {
+	if g.Mod != "ctrl" || g.Theme != "gruvbox" || g.Style != "double" {
 		t.Fatalf("fields = %+v", g)
 	}
 	if g.StatusBar == nil || *g.StatusBar {
@@ -27,7 +27,7 @@ func TestParseGlobalEmptyObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Mod != "" || g.StatusBar != nil || g.Theme != "" {
+	if g.Mod != "" || g.StatusBar != nil || g.Theme != "" || g.Style != "" {
 		t.Fatalf("zero value expected, got %+v", g)
 	}
 }

@@ -18,8 +18,12 @@ type GlobalConfig struct {
 	Mod string `json:"mod,omitempty"`
 	// StatusBar toggles the bottom mode/hint bar. nil == true.
 	StatusBar *bool `json:"statusbar,omitempty"`
-	// Theme picks the palette: "dark", "light", or "" (auto).
+	// Theme picks the colour palette: "auto" (default), "tokyo-night",
+	// "gruvbox", "slate", "midnight" (or "" / "dark" / "light" = auto).
 	Theme string `json:"theme,omitempty"`
+	// Style picks the styleset (border + glyphs): "rounded" (default),
+	// "double", "heavy", "ascii".
+	Style string `json:"style,omitempty"`
 	// Keybindings are global bindings merged under each TUI's own keybindings.
 	// Keys may use the "mod+" prefix.
 	Keybindings map[string]string `json:"keybindings,omitempty"`

@@ -63,13 +63,21 @@ func cmdRun(args []string) int {
 }
 
 // runnerOptions loads the global runner config and folds it over the engine
-// defaults. A missing file is fine; a malformed one is an error.
+// defaults. A missing file is fine; a malformed one — or an unknown theme /
+// style name — is an error, consistent with the strict-JSON config rule.
 func runnerOptions() (engine.Options, error) {
 	gc, err := config.LoadGlobal()
 	if err != nil {
 		return engine.Options{}, err
 	}
-	return engine.OptionsFromGlobal(gc), nil
+	opts := engine.OptionsFromGlobal(gc)
+	if !engine.ValidThemeName(opts.Theme) {
+		return engine.Options{}, fmt.Errorf("unknown theme %q (known: %v)", opts.Theme, engine.ThemeNames())
+	}
+	if !engine.ValidStyleName(opts.Style) {
+		return engine.Options{}, fmt.Errorf("unknown style %q (known: %v)", opts.Style, engine.StyleNames())
+	}
+	return opts, nil
 }
 
 func cmdConfig(args []string) int {
@@ -90,13 +98,22 @@ func cmdConfig(args []string) int {
 		fmt.Println("status: loaded")
 	}
 	opts := engine.OptionsFromGlobal(gc)
-	fmt.Printf("effective: mod=%q statusbar=%v theme=%q\n", opts.Mod, opts.StatusBar, orAuto(opts.Theme))
+	fmt.Printf("effective: mod=%q statusbar=%v theme=%q style=%q\n",
+		opts.Mod, opts.StatusBar, orDefault(opts.Theme, "auto"), orDefault(opts.Style, "rounded"))
+	fmt.Println("themes:", strings.Join(engine.ThemeNames(), " "))
+	fmt.Println("styles:", strings.Join(engine.StyleNames(), " "))
+	if !engine.ValidThemeName(opts.Theme) {
+		fmt.Fprintf(os.Stderr, "warning: theme %q is not a known name\n", opts.Theme)
+	}
+	if !engine.ValidStyleName(opts.Style) {
+		fmt.Fprintf(os.Stderr, "warning: style %q is not a known name\n", opts.Style)
+	}
 	return 0
 }
 
-func orAuto(s string) string {
+func orDefault(s, def string) string {
 	if s == "" {
-		return "auto"
+		return def
 	}
 	return s
 }
@@ -123,17 +140,25 @@ func cmdValidate(args []string) int {
 }
 
 func cmdRender(args []string) int {
-	if len(args) < 1 || len(args) > 2 {
-		fmt.Fprintln(os.Stderr, "usage: ultui render <config.json> [WIDTHxHEIGHT]")
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: ultui render <config.json> [WIDTHxHEIGHT] [theme=NAME] [style=NAME]")
 		return 2
 	}
 	w, h := 100, 30
-	if len(args) == 2 {
-		if x, y, ok := parseWH(args[1]); ok {
-			w, h = x, y
-		} else {
-			fmt.Fprintf(os.Stderr, "ultui: bad size %q (want e.g. 120x40)\n", args[1])
-			return 2
+	var themeOv, styleOv string
+	for _, a := range args[1:] {
+		switch {
+		case strings.HasPrefix(a, "theme="):
+			themeOv = strings.TrimPrefix(a, "theme=")
+		case strings.HasPrefix(a, "style="):
+			styleOv = strings.TrimPrefix(a, "style=")
+		default:
+			if x, y, ok := parseWH(a); ok {
+				w, h = x, y
+			} else {
+				fmt.Fprintf(os.Stderr, "ultui: bad arg %q (want WxH, theme=NAME or style=NAME)\n", a)
+				return 2
+			}
 		}
 	}
 	cfg, err := config.Load(args[0])
@@ -145,6 +170,22 @@ func cmdRender(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ultui:", err)
 		return 1
+	}
+	// Optional per-invocation overrides — handy for eyeballing a theme/style
+	// headlessly without editing the global config.
+	if themeOv != "" {
+		if !engine.ValidThemeName(themeOv) {
+			fmt.Fprintf(os.Stderr, "ultui: unknown theme %q (known: %v)\n", themeOv, engine.ThemeNames())
+			return 2
+		}
+		opts.Theme = themeOv
+	}
+	if styleOv != "" {
+		if !engine.ValidStyleName(styleOv) {
+			fmt.Fprintf(os.Stderr, "ultui: unknown style %q (known: %v)\n", styleOv, engine.StyleNames())
+			return 2
+		}
+		opts.Style = styleOv
 	}
 	frame, err := engine.SnapshotWithOptions(cfg, w, h, opts)
 	if err != nil {
@@ -174,7 +215,7 @@ func usage() {
 usage:
   ultui run <config.json>              render and run a TUI
   ultui validate <config.json>         parse and type-check a config
-  ultui render <config.json> [WxH]     print one headless frame to stdout
+  ultui render <config.json> [WxH] [theme=N] [style=N]   print one headless frame
   ultui config                         show the global runner config + effective settings
   ultui version
   ultui help
