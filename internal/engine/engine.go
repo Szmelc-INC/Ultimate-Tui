@@ -23,6 +23,15 @@ const (
 	actSettings  = "settings"
 	actLock      = "lock"
 	actUnlock    = "unlock"
+	actZoomIn    = "zoom-in"
+	actZoomOut   = "zoom-out"
+	actZoomReset = "zoom-reset"
+)
+
+// zoom bias bounds, in steps (one step == zoomStep cells, see layout.go).
+const (
+	zoomMin = -3
+	zoomMax = 8
 )
 
 // baseBinds are merged under the global options and the TUI config (config
@@ -34,6 +43,14 @@ var baseBinds = map[string]string{
 	"shift+tab": actFocusPrev,
 	"f1":        actHelp,
 	"f3":        actSettings,
+	// Per-pane zoom. The modifier makes these global (NAV and LOCKED alike);
+	// "instead of Ctrl" because Ctrl +/- is the terminal's own font zoom.
+	// Both "=" and "+" are bound so an unshifted or shifted key both work.
+	"mod+=": actZoomIn,
+	"mod++": actZoomIn,
+	"mod+-": actZoomOut,
+	"mod+_": actZoomOut,
+	"mod+0": actZoomReset,
 }
 
 type direction int
@@ -60,6 +77,11 @@ type leaf struct {
 	title  string
 	border bool
 	w      widget.Widget
+
+	// zoom is a per-pane size bias in steps: positive grows this pane at its
+	// siblings' expense in every ancestor split, negative shrinks it. Applied
+	// as a sum-preserving post-pass in render() (see shiftZoom).
+	zoom int
 
 	// absolute rectangle from the last render, for mouse hit-testing and
 	// directional focus movement.
@@ -355,6 +377,14 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 		m.locked = true
 	case actUnlock:
 		m.locked, m.pendingEsc = false, false
+	case actZoomIn:
+		lf := m.leaves[m.focus]
+		lf.zoom = clampInt(lf.zoom+1, zoomMin, zoomMax)
+	case actZoomOut:
+		lf := m.leaves[m.focus]
+		lf.zoom = clampInt(lf.zoom-1, zoomMin, zoomMax)
+	case actZoomReset:
+		m.leaves[m.focus].zoom = 0
 	}
 	return m, nil
 }
@@ -523,6 +553,19 @@ func (m *Model) render(n node, x, y, w, h int) string {
 		axis = w
 	}
 	sizes := distribute(specs, axis)
+
+	// Fold in per-pane zoom: a child whose subtree holds a zoomed leaf grows
+	// (or shrinks) by that bias, siblings absorb the opposite, total unchanged.
+	bias := make([]int, len(n.children))
+	zoomed := false
+	for i, c := range n.children {
+		if bias[i] = zoomCells(c.node); bias[i] != 0 {
+			zoomed = true
+		}
+	}
+	if zoomed {
+		sizes = shiftZoom(sizes, bias)
+	}
 
 	parts := make([]string, len(n.children))
 	off := 0

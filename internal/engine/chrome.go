@@ -77,8 +77,8 @@ func (m *Model) helpPanel() string {
 		row("F3", "theme & style settings"),
 		row("Ctrl+C", "NAV: confirm-quit  ·  LOCKED: kill this pane's process"),
 		row(m.mod+"+…", "config keybindings ("+m.mod+" = the modifier key)"),
+		row(m.mod+"+ = / - / 0", "grow / shrink / reset the focused pane"),
 		row("mouse", "click a pane to focus · wheel scrolls under cursor"),
-		row("zoom", "Ctrl +/- is your terminal's font zoom, not ultui"),
 	} {
 		b.WriteString(ln)
 		b.WriteString("\n")
