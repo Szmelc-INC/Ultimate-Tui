@@ -271,7 +271,12 @@ func TestModBindingFiresWhileLocked(t *testing.T) {
 	}
 }
 
-func TestClickBehindKillDialogCannotRedirectIt(t *testing.T) {
+// A click outside the modal's own panel now dismisses it (the same as Esc —
+// see handleOverlayMouse) rather than being silently dropped. The safety
+// property that matters — the click can never redirect the dialog to a
+// different pane — still holds: dismissing cancels, it never confirms
+// against whatever the cursor happened to be over.
+func TestClickOutsideKillDialogCancelsWithoutRedirecting(t *testing.T) {
 	src := `{
       "name": "redirect",
       "layout": { "direction": "row", "children": [
@@ -302,18 +307,21 @@ func TestClickBehindKillDialogCannotRedirectIt(t *testing.T) {
 		t.Fatalf("kill dialog not shown:\n%s", m.View())
 	}
 
-	// Click on the other pane while the dialog is up — must be ignored.
-	u, _ = m.Update(tea.MouseMsg{X: 55, Y: 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	// Click on the other pane, well outside the small centered dialog: it
+	// must cancel (not redirect the kill to "note", and not kill "sh" either).
+	u, _ = m.Update(tea.MouseMsg{X: 55, Y: 10, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	m = u.(*engine.Model)
+	if strings.Contains(m.View(), "Kill the process") {
+		t.Fatalf("outside click did not dismiss the dialog:\n%s", m.View())
+	}
 	if m.Focused() != "sh" {
 		t.Fatalf("click behind the dialog moved focus to %q", m.Focused())
 	}
-
-	// Confirm — the shell (the dialog's captured target) is what dies.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-	m = u.(*engine.Model)
-	if !strings.Contains(m.View(), "process killed") {
-		t.Fatalf("the shell pane was not the one interrupted:\n%s", m.View())
+	if !m.Locked() {
+		t.Fatal("cancel should leave the shell locked, not release it")
+	}
+	if strings.Contains(m.View(), "process killed") {
+		t.Fatal("outside click killed the process instead of just cancelling")
 	}
 }
 

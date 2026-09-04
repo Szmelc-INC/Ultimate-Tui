@@ -200,8 +200,19 @@ func (m *Model) openConfirmClose(idx int, name string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// splitMouseClick selects the field a click landed on (see splitPanel: title,
+// blank, then one row per field — direction, then percent).
+func (m *Model) splitMouseClick(row int) {
+	switch row - 2 {
+	case 0:
+		m.spField = 0
+	case 1:
+		m.spField = 1
+	}
+}
+
 func (m *Model) renderSplit(frame string) string {
-	return overlayCenter(frame, m.splitPanel(), m.w, m.h)
+	return m.splice(frame, m.splitPanel())
 }
 
 func (m *Model) splitPanel() string {

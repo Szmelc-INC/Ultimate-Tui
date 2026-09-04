@@ -52,7 +52,7 @@ func (m *Model) statusBar(w int) string {
 // keybindings.
 func (m *Model) renderHelp(frame string) string {
 	panel := m.helpPanel()
-	return overlayCenter(frame, panel, m.w, m.h)
+	return m.splice(frame, panel)
 }
 
 func (m *Model) helpPanel() string {
@@ -103,28 +103,60 @@ func (m *Model) helpPanel() string {
 	return th.helpBox.Render(b.String())
 }
 
+// panelContentOffsetY/X is where a panel's own content (the string every
+// xxxPanel() builds) starts inside its rendered box: every panel is wrapped
+// in th.helpBox, which is a 1-cell border plus Padding(1, 3) — border(1) +
+// padding-top(1) = 2 rows down, border(1) + padding-left(3) = 4 cols in. That
+// holds for every overlay (they all share th.helpBox), so a click's position
+// within a panel's content — and hence which row it hit — is the same
+// arithmetic everywhere; see handleOverlayMouse.
+const (
+	panelContentOffsetY = 2
+	panelContentOffsetX = 4
+)
+
+// splice centers panel over frame (via overlayCenter) and stamps its bounding
+// box (m.ovX/Y/W/H) so handleOverlayMouse can hit-test a click against it on
+// the next mouse message. Every render*() overlay function must go through
+// this instead of calling overlayCenter directly, or its panel is invisible
+// to the mouse.
+func (m *Model) splice(frame, panel string) string {
+	top, left, ovW, ovH := overlayGeometry(panel, m.w, m.h)
+	m.ovX, m.ovY, m.ovW, m.ovH = left, top, ovW, ovH
+	return overlayCenter(frame, panel, m.w, m.h)
+}
+
+// overlayGeometry is the placement overlayCenter computes: overlay's origin
+// (top, left) once centered over a w x h frame, and its own measured size
+// (ovW, ovH). Split out so the mouse layer (see handleOverlayMouse) can stamp
+// the same bounding box a render*() call just used, without re-deriving it by
+// hand and risking drift from overlayCenter's own math.
+func overlayGeometry(overlay string, w, h int) (top, left, ovW, ovH int) {
+	lines := strings.Split(overlay, "\n")
+	ovH = len(lines)
+	for _, ln := range lines {
+		if x := lipgloss.Width(ln); x > ovW {
+			ovW = x
+		}
+	}
+	top = (h - ovH) / 2
+	if top < 0 {
+		top = 0
+	}
+	left = (w - ovW) / 2
+	if left < 0 {
+		left = 0
+	}
+	return top, left, ovW, ovH
+}
+
 // overlayCenter places overlay centered on top of base, both measured in display
 // cells. base is assumed to be w x h. Lines of overlay replace the middle span
 // of the corresponding base lines, ANSI-safely.
 func overlayCenter(base, overlay string, w, h int) string {
 	baseLines := strings.Split(base, "\n")
 	ovLines := strings.Split(overlay, "\n")
-	ovH := len(ovLines)
-	ovW := 0
-	for _, ln := range ovLines {
-		if x := lipgloss.Width(ln); x > ovW {
-			ovW = x
-		}
-	}
-
-	top := (h - ovH) / 2
-	if top < 0 {
-		top = 0
-	}
-	left := (w - ovW) / 2
-	if left < 0 {
-		left = 0
-	}
+	top, left, ovW, _ := overlayGeometry(overlay, w, h)
 
 	for i, ov := range ovLines {
 		y := top + i

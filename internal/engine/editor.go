@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/silverx/ultimate-tui/internal/widget"
 )
@@ -509,8 +510,39 @@ func (m *Model) applyEdit() tea.Cmd {
 	return cmd
 }
 
+// editorMouseClick maps a click's content-relative (x, y) to editorPanel's
+// two interactive regions: the tab navbar (row 1) and the field list (row 3
+// onward, one row per field). A tab click switches tabs; a field click
+// selects it, and immediately toggles an fBool field — a checkbox reacts to
+// one click, not click-then-arrow.
+func (m *Model) editorMouseClick(cx, cy int) (tea.Model, tea.Cmd) {
+	if cy == 1 {
+		x := 0
+		for i, t := range m.editorTabs() {
+			w := lipgloss.Width(t) + 2 // " " + t + " "
+			if cx >= x && cx < x+w {
+				m.edTab, m.edRow = i, 0
+				return m, nil
+			}
+			x += w
+		}
+		return m, nil
+	}
+
+	fields := m.editorFields()
+	i := cy - 3
+	if i < 0 || i >= len(fields) {
+		return m, nil
+	}
+	m.edRow = i
+	if fields[i].kind == fBool {
+		return m, m.editCycle(fields[i], 1)
+	}
+	return m, nil
+}
+
 func (m *Model) renderEditor(frame string) string {
-	return overlayCenter(frame, m.editorPanel(), m.w, m.h)
+	return m.splice(frame, m.editorPanel())
 }
 
 func (m *Model) editorPanel() string {

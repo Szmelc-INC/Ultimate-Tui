@@ -173,8 +173,21 @@ func (m *Model) runContextAction(a ctxAction) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// contextMouseClick maps a click's content-relative row to a menu item (see
+// contextPanel: title, blank, then one row per item) and runs it right away
+// — a menu row is a button, not a focus target that needs a second Enter.
+func (m *Model) contextMouseClick(row int) (tea.Model, tea.Cmd) {
+	items := m.contextItems(m.ctxLeaf)
+	i := row - 2
+	if i < 0 || i >= len(items) || !items[i].enabled {
+		return m, nil
+	}
+	m.ctxRow = i
+	return m.runContextAction(items[i].act)
+}
+
 func (m *Model) renderContext(frame string) string {
-	return overlayCenter(frame, m.contextPanel(), m.w, m.h)
+	return m.splice(frame, m.contextPanel())
 }
 
 func (m *Model) contextPanel() string {

@@ -59,19 +59,43 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // next View repaints in it.
 func (m *Model) settingsMove(d int) {
 	if m.setCol == 0 {
+		m.settingsSetRow(0, m.setRow[0]+d)
+	} else {
+		m.settingsSetRow(1, m.setRow[1]+d)
+	}
+}
+
+// settingsSetRow jumps (not shifts) the given column's cursor to row i,
+// clamped to the list's bounds, and applies it as a live preview — shared by
+// keyboard (settingsMove, relative) and mouse (settingsMouseClick, absolute).
+func (m *Model) settingsSetRow(col, i int) {
+	if col == 0 {
 		names := ThemeNames()
-		m.setRow[0] = clampInt(m.setRow[0]+d, 0, len(names)-1)
+		m.setRow[0] = clampInt(i, 0, len(names)-1)
 		m.themeName = names[m.setRow[0]]
 	} else {
 		names := StyleNames()
-		m.setRow[1] = clampInt(m.setRow[1]+d, 0, len(names)-1)
+		m.setRow[1] = clampInt(i, 0, len(names)-1)
 		m.styleName = names[m.setRow[1]]
 	}
 	m.invalidateTheme()
 }
 
+// settingsMouseClick picks a column by absolute screen X against the panel's
+// horizontal midpoint (the two columns are row-aligned, so an exact per-
+// column width isn't needed) and a row from the content-relative Y — see
+// settingsPanel: title, blank, a header line, then one row per item.
+func (m *Model) settingsMouseClick(absX, row int) {
+	col := 0
+	if absX >= m.ovX+m.ovW/2 {
+		col = 1
+	}
+	m.setCol = col
+	m.settingsSetRow(col, row-3)
+}
+
 func (m *Model) renderSettings(frame string) string {
-	return overlayCenter(frame, m.settingsPanel(), m.w, m.h)
+	return m.splice(frame, m.settingsPanel())
 }
 
 func (m *Model) settingsPanel() string {

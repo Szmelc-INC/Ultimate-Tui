@@ -55,21 +55,24 @@ func TestContextMenuRightClickTargetsPaneUnderCursor(t *testing.T) {
 	}
 }
 
-// The one-overlay / mouse-drop invariant must still hold: with the context menu
-// up, a left-click behind it changes nothing.
-func TestContextMenuStillDropsMouse(t *testing.T) {
+// A click outside the menu's own panel closes it (the same as Esc) without
+// moving focus or otherwise touching the pane tree behind it — it dismisses,
+// it never falls through to the click's own target.
+func TestContextMenuClickOutsideClosesWithoutTouchingFocus(t *testing.T) {
 	m := newModel(t, ctxSrc, 90, 26)
 	_ = m.View()
 	u, _ := m.Update(modKey('w'))
 	m = u.(*engine.Model)
-	before := m.View()
-	u, _ = m.Update(tea.MouseMsg{X: 70, Y: 12, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	m = u.(*engine.Model)
-	if m.Focused() != "Note" {
-		t.Fatalf("click behind the menu moved focus to %q", m.Focused())
+	if !strings.Contains(m.View(), "pane · Note") {
+		t.Fatal("context menu did not open")
 	}
-	if m.View() != before {
-		t.Fatal("click behind the menu changed the frame")
+	u, _ = m.Update(tea.MouseMsg{X: 1, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = u.(*engine.Model)
+	if strings.Contains(m.View(), "pane · Note") {
+		t.Fatal("click outside the menu did not close it")
+	}
+	if m.Focused() != "Note" {
+		t.Fatalf("closing via outside click moved focus to %q", m.Focused())
 	}
 }
 

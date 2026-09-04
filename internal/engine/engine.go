@@ -197,6 +197,11 @@ type Model struct {
 
 	rectW, rectH int // body size the leaf rectangles were computed at
 
+	// ovX/Y/W/H is the active overlay panel's bounding box, stamped by
+	// splice() (chrome.go) every render — used by handleOverlayMouse to hit-
+	// test clicks against it (outside = dismiss, inside = row/field/tab hit).
+	ovX, ovY, ovW, ovH int
+
 	// ovSplit state (split.go): the context menu's Split row and the "New
 	// pane" row (right-click on dead space) both land here.
 	spTarget int    // leaf index the split applies to; -1 = wrap the whole root ("New")
@@ -346,7 +351,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if m.overlayActive() {
-			return m, nil // a modal is up; ignore clicks / wheel behind it
+			return m.handleOverlayMouse(msg)
 		}
 		return m.handleMouse(msg)
 

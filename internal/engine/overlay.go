@@ -115,6 +115,18 @@ func (m *Model) lockedInterrupt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.forwardKey(msg)
 }
 
+// confirmMouseClick maps a click's content-relative row to confirmPanel's two
+// lines: title, blank, "confirm" (row 2), "cancel" (row 3).
+func (m *Model) confirmMouseClick(row int) (tea.Model, tea.Cmd) {
+	switch row {
+	case 2:
+		return m.confirmYes()
+	case 3:
+		return m.handleConfirmKey("esc")
+	}
+	return m, nil
+}
+
 // confirmPanel is the centered dialog body.
 func (m *Model) confirmPanel() string {
 	th := m.theme()
@@ -127,5 +139,5 @@ func (m *Model) confirmPanel() string {
 }
 
 func (m *Model) renderConfirm(frame string) string {
-	return overlayCenter(frame, m.confirmPanel(), m.w, m.h)
+	return m.splice(frame, m.confirmPanel())
 }

@@ -60,8 +60,21 @@ func (m *Model) handleControlKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// controlMouseClick maps a click's content-relative row to a menu item (see
+// controlPanel: title, blank, then one row per item) and opens it.
+func (m *Model) controlMouseClick(row int) (tea.Model, tea.Cmd) {
+	items := m.controlItems()
+	i := row - 2
+	if i < 0 || i >= len(items) {
+		return m, nil
+	}
+	m.ctrlRow = i
+	items[i].open(m)
+	return m, nil
+}
+
 func (m *Model) renderControl(frame string) string {
-	return overlayCenter(frame, m.controlPanel(), m.w, m.h)
+	return m.splice(frame, m.controlPanel())
 }
 
 func (m *Model) controlPanel() string {
