@@ -1,0 +1,25 @@
+{
+  "name": "baked",
+  "version": "0.1.0",
+  "layout": {
+    "direction": "column",
+    "children": [
+      {
+        "size": "3",
+        "pane": {
+          "type": "text",
+          "border": false,
+          "content": "  baked binary — this TUI has no external config file"
+        }
+      },
+      {
+        "size": "*",
+        "pane": {
+          "type": "command",
+          "title": "date",
+          "command": "date; echo; echo 'rebuild the binary to change this screen'"
+        }
+      }
+    ]
+  }
+}

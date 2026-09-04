@@ -4,9 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Pre-implementation. The repo currently holds only design documents — `DESIGN.md` (the vision) and `optimal-mode.md` (a token-budget ruleset). There is no Go module, no source tree, no build. The first substantive task is scaffolding the framework described in `DESIGN.md`.
+MVP built. Go module `github.com/silverx/ultimate-tui` (Go 1.26). A config renders end to end: recursive row/column splits, `text` and `command` widgets, focus ring, borders, keybindings, three run modes (runtime / headless / go:embed-static). `DESIGN.md` is the vision; `README.md` and `LLM.md` document what actually exists; `optimal-mode.md` is a token-budget ruleset.
 
-Because nothing is built yet, there are no build/lint/test commands to document. When you create the module, add a `Makefile` with the dev commands (`DESIGN.md` explicitly asks for auxiliary tooling like a Makefile and setup scripts) and update this file with the real invocations, including how to run a single test.
+## Commands
+
+```sh
+make build                              # -> bin/ultui
+make test                               # full suite — headless, no TTY required
+make test-one T=TestFocusTraversalWraps # single test (go test ./... -run '<T>' -v)
+make vet ; make fmt
+./bin/ultui run examples/dashboard.json      # live TUI (needs a TTY)
+./bin/ultui render examples/hello.json 100x30 # print ONE frame to stdout — how to verify rendering headless
+./bin/ultui validate examples/dashboard.json
+make compiled                           # build the go:embed static demo (examples/compiled/)
+```
+
+**This is a background job with no TTY** — never verify by launching `run`. Assert on `engine.Model.View()` / `engine.Snapshot(cfg, w, h)` in `_test.go`, or eyeball `ultui render`.
+
+## Code map
+
+| path | role |
+|------|------|
+| `internal/config` | schema structs; `Parse([]byte)` / `Load(path)`. Strict JSON. **The only format-aware code** — a second format (YAML/TOML) is a decoder swap here and nowhere else. |
+| `internal/widget` | `Widget` interface + `Register`/`New` kind registry (self-register in `init()`). `text.go`, `command.go`, shared `scrollBox` in `scroll.go`. |
+| `internal/engine` | `parseSize`/`distribute` layout math (`layout.go`), bubbletea root `Model` (`engine.go`), `Run` TTY entry (`run.go`), headless `Snapshot` (`snapshot.go`). |
+| `main.go` | `run` / `validate` / `render` CLI. |
+| `examples/` | `hello.json`, `dashboard.json`, `compiled/` (go:embed wrapper). |
+
+Import direction: `engine` → `widget` → `config` → (nothing). Keep it acyclic.
+
+## Architecture decisions (do not undo)
+
+- **Widgets are a compile-time registry, not plugins.** `widget.Register(kind, factory)` + config selecting a kind by name. No `plugin.Open`, no `dlopen`, no subprocess-as-module. This is what makes "runtime, dynamic-linked, and static-linked" the *same engine* — runtime reads config from disk, static `go:embed`s it, dynamic reads a path; all call `engine.Run`. "Total modularity" from `DESIGN.md` will tempt a rewrite toward plugins — resist; add a widget file instead.
+- **Config is strict JSON.** `DESIGN.md`'s "markdown json" was ambiguous; resolved to one strict decoder (`DisallowUnknownFields`, so typos error). Nodes are split-XOR-leaf by key presence, not a discriminator field.
+- **`command` widget ≠ interactive terminal.** It runs a command once and streams combined output into a scroll pane. Interactive process panes (pty + ANSI cell-grid emulator + key forwarding) are a separate, unbuilt subsystem — `DESIGN.md`'s "like a terminal multiplexer" line. Don't let the schema imply the pane hosts `vim`.
+- **lipgloss sizing in `renderLeaf`:** `Width/Height` set the content area, a border adds 2 outside. Never put `MaxWidth/MaxHeight` on a bordered style — it clips the final output including the border and shears an edge.
+
+When you create auxiliary tooling `DESIGN.md` asks for (setup scripts etc.), keep the `Makefile` the single source of dev commands and update the block above.
 
 ## What this project is
 
@@ -35,7 +69,7 @@ The project expects two parallel docs, kept in sync with the code:
 ## Working constraints
 
 - **Runs on a live production Arch Linux system with no sandbox.** Be careful with destructive operations.
-- **Use git.** No repo exists yet — create one (`git init`) before making changes, work on a branch, and ask before merging to main.
+- **Use git.** Work on a branch; never commit straight to `main` or merge without asking.
 - **Minimalism over frameworks.** Build exactly what's required with zero overhead. Don't pull a heavy dependency for one small task — write the snippet or cherry-pick it. Continuously question whether a solution is over-complex.
 - **Design authority.** Follow `DESIGN.md`'s intent closely *where it makes sense*. If an instruction is impossible, wrong, or wasteful, do it the better way while still delivering at least what was asked. If something clearly should exist, build it even if unmentioned.
 - **Clarify only high-stakes unknowns.** For low-stakes ambiguity, make a best-effort call and proceed.
