@@ -117,7 +117,8 @@ internal/config   schema + strict loader (Parse is the only format seam)
 internal/widget   Widget interface + kind registry; text.go, command.go
 internal/engine   layout math, bubbletea model, headless Snapshot
 main.go           run / validate / render CLI
-examples/         hello, dashboard, compiled/
+examples/         hello · dashboard · responsive · keys · sysmon · pretty ·
+                  devdash · compiled/   —  see examples/README.md
 ```
 
 ## Roadmap

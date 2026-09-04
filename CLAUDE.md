@@ -29,7 +29,7 @@ make compiled                           # build the go:embed static demo (exampl
 | `internal/widget` | `Widget` interface + `Register`/`New` kind registry (self-register in `init()`). `text.go`, `command.go`, shared `scrollBox` in `scroll.go`. |
 | `internal/engine` | `parseSize`/`distribute` layout math (`layout.go`), bubbletea root `Model` (`engine.go`), `Run` TTY entry (`run.go`), headless `Snapshot` (`snapshot.go`). |
 | `main.go` | `run` / `validate` / `render` CLI. |
-| `examples/` | `hello.json`, `dashboard.json`, `compiled/` (go:embed wrapper). |
+| `examples/` | `hello`, `dashboard`, `responsive`, `keys`, `sysmon`, `pretty`, `devdash` + `compiled/` (go:embed wrapper); `examples/README.md` maps each to what it demonstrates and a render size. |
 
 Import direction: `engine` → `widget` → `config` → (nothing). Keep it acyclic.
 

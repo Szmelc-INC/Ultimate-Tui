@@ -114,6 +114,35 @@ func TestTitledHeaderPaneKeepsFrameHeight(t *testing.T) {
 	}
 }
 
+func TestLongTitleDoesNotWrapAndBreakHeight(t *testing.T) {
+	// A title wider than its pane must be truncated to one line, not wrapped —
+	// a wrapped title used to push the frame one row over its size.
+	src := `{
+      "name": "longtitle",
+      "layout": {
+        "direction": "column",
+        "children": [
+          { "size": "50%", "pane": { "type": "text",
+            "title": "this is a deliberately very long pane title that exceeds the width",
+            "content": "a" } },
+          { "size": "*", "pane": { "type": "text", "title": "b", "content": "b" } }
+        ]
+      }
+    }`
+	for _, wh := range [][2]int{{24, 16}, {30, 9}, {20, 21}} {
+		m := newModel(t, src, wh[0], wh[1])
+		v := m.View()
+		if got := len(strings.Split(v, "\n")); got != wh[1] {
+			t.Fatalf("size %dx%d: %d lines\n%s", wh[0], wh[1], got, v)
+		}
+		for i, ln := range strings.Split(v, "\n") {
+			if w := lipgloss.Width(ln); w != wh[0] {
+				t.Fatalf("size %dx%d line %d width %d", wh[0], wh[1], i, w)
+			}
+		}
+	}
+}
+
 func TestNestedColumnSplit(t *testing.T) {
 	src := `{
       "name": "nested",

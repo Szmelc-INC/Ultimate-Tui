@@ -1,0 +1,73 @@
+{
+  "name": "devdash",
+  "version": "0.1.0",
+  "keybindings": {
+    "l": "focus-next",
+    "h": "focus-prev",
+    "J": "focus-next",
+    "K": "focus-prev"
+  },
+  "layout": {
+    "direction": "row",
+    "children": [
+      {
+        "size": "32%",
+        "direction": "column",
+        "children": [
+          {
+            "size": "45%",
+            "pane": {
+              "type": "command",
+              "title": " git status",
+              "command": "git -c color.status=always status -sb 2>&1 | cat"
+            }
+          },
+          {
+            "size": "*",
+            "pane": {
+              "type": "command",
+              "title": " source tree",
+              "command": "eza -T -L 2 --icons=always --color=always --group-directories-first . 2>/dev/null | grep . || tree -L 2 -I 'bin' --noreport 2>/dev/null || find . -maxdepth 2 -not -path '*/.git/*' | sort"
+            }
+          }
+        ]
+      },
+      {
+        "size": "*",
+        "direction": "column",
+        "children": [
+          {
+            "size": "50%",
+            "pane": {
+              "type": "command",
+              "title": " git log  --graph",
+              "command": "git -c color.ui=always log --graph --abbrev-commit --decorate --format='%C(auto)%h%d %s %C(dim)%cr %an%C(reset)' -20 2>&1 | cat"
+            }
+          },
+          {
+            "size": "*",
+            "direction": "row",
+            "children": [
+              {
+                "size": "50%",
+                "pane": {
+                  "type": "command",
+                  "title": " go test ./...",
+                  "command": "cd \"$(git rev-parse --show-toplevel)\" && go test ./... 2>&1 | tail -n 30"
+                }
+              },
+              {
+                "size": "*",
+                "pane": {
+                  "type": "command",
+                  "title": " TODO / FIXME",
+                  "command": "{ grep -rniE 'TODO|FIXME|XXX|HACK' --include='*.go' . || echo 'clean — no TODO/FIXME markers in *.go'; } | sed 's#^\\./##' | head -n 30"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

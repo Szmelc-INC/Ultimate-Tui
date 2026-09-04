@@ -1,0 +1,94 @@
+{
+  "name": "sysmon",
+  "version": "0.1.0",
+  "keybindings": {
+    "l": "focus-next",
+    "h": "focus-prev",
+    "r": "focus-next"
+  },
+  "layout": {
+    "direction": "column",
+    "children": [
+      {
+        "size": "3",
+        "pane": {
+          "type": "command",
+          "border": false,
+          "command": "printf '  \\033[1;36msysmon\\033[0m  '; uname -sr; printf '  '; uptime"
+        }
+      },
+      {
+        "size": "*",
+        "direction": "row",
+        "children": [
+          {
+            "size": "38%",
+            "direction": "column",
+            "children": [
+              {
+                "size": "50%",
+                "pane": {
+                  "type": "command",
+                  "title": " cpu",
+                  "command": "lscpu | grep -E 'Model name|^CPU\\(s\\)|Thread|Core|MHz|Vendor' | sed 's/  */ /g'; echo; echo -n 'loadavg: '; cat /proc/loadavg"
+                }
+              },
+              {
+                "size": "*",
+                "pane": {
+                  "type": "command",
+                  "title": " memory",
+                  "command": "free -h --si | sed 's/  */  /g'"
+                }
+              }
+            ]
+          },
+          {
+            "size": "*",
+            "direction": "column",
+            "children": [
+              {
+                "size": "40%",
+                "direction": "row",
+                "children": [
+                  {
+                    "size": "55%",
+                    "pane": {
+                      "type": "command",
+                      "title": " disk",
+                      "command": "df -h -x tmpfs -x devtmpfs -x efivarfs 2>/dev/null | awk 'NR==1 || $6 ~ /^\\/($|home|mnt|data)/' "
+                    }
+                  },
+                  {
+                    "size": "*",
+                    "pane": {
+                      "type": "command",
+                      "title": " net",
+                      "command": "ip -br -c address 2>/dev/null | cat; echo; ip -4 route get 1.1.1.1 2>/dev/null | sed -n '1p'"
+                    }
+                  }
+                ]
+              },
+              {
+                "size": "*",
+                "pane": {
+                  "type": "command",
+                  "title": " processes  ·  top by resident memory",
+                  "command": "ps -eo pid,user,pmem,pcpu,rss,comm --sort=-rss | head -n 22 | awk 'NR==1{print;next}{$5=sprintf(\"%6.0fM\",$5/1024); print}' | column -t"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "size": "1",
+        "pane": {
+          "type": "text",
+          "border": false,
+          "content": "  sysmon  ·  snapshot taken at launch — re-run to refresh  ·  h/l focus  ·  q quit"
+        }
+      }
+    ]
+  }
+}

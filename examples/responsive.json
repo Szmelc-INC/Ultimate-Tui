@@ -1,0 +1,74 @@
+{
+  "name": "responsive-layout",
+  "version": "0.1.0",
+  "keybindings": {
+    "l": "focus-next",
+    "h": "focus-prev"
+  },
+  "layout": {
+    "direction": "column",
+    "children": [
+      {
+        "size": "6",
+        "pane": {
+          "type": "command",
+          "border": false,
+          "title": "",
+          "command": "figlet -f small 'ULTIMATE' 2>/dev/null || echo 'ULTIMATE TUI'"
+        }
+      },
+      {
+        "size": "*",
+        "direction": "row",
+        "children": [
+          {
+            "size": "25%",
+            "pane": {
+              "type": "text",
+              "title": "25%  fraction",
+              "content": "This column is always a quarter of the body width.\n\nResize your terminal — every pane reflows from ratios, there is no fixed grid.\n\nTry:\n  ultui render examples/responsive.json 60x18\n  ultui render examples/responsive.json 120x30\n  ultui render examples/responsive.json 200x50\n\nh / l  move focus\nj / k  scroll a pane"
+            }
+          },
+          {
+            "size": "30",
+            "pane": {
+              "type": "text",
+              "title": "30  fixed cells",
+              "content": "This column holds 30 columns no matter the window size — good for a nav rail or a label gutter.\n\nFixed and percentage panes are laid out first; the flex (*) pane soaks up whatever is left, so the layout can never leave a gap or overflow the screen."
+            }
+          },
+          {
+            "size": "*",
+            "direction": "column",
+            "children": [
+              {
+                "size": "60%",
+                "pane": {
+                  "type": "command",
+                  "title": "flex  *  (fills the rest)",
+                  "command": "printf '%s\\n' 'This pane is the flex region.' '' 'It expands to fill whatever width and height' 'the fixed + percentage panes leave over.' '' 'This box is 60% of the remaining height;' 'the clock strip below is the other 40%.' '' 'Re-render at other sizes to watch it reflow:' '  make render EXAMPLE=examples/responsive.json SIZE=80x20'"
+                }
+              },
+              {
+                "size": "*",
+                "pane": {
+                  "type": "command",
+                  "title": "clock",
+                  "command": "date '+  %A %d %B %Y'; date '+  %H:%M:%S %Z'"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "size": "1",
+        "pane": {
+          "type": "text",
+          "border": false,
+          "content": "  responsive-layout  ·  h/l focus  ·  j/k scroll  ·  q quit"
+        }
+      }
+    ]
+  }
+}

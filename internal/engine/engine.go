@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -214,13 +215,16 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	bodyH := innerH
 	var head string
 	if lf.title != "" {
-		head = titleStyle.Width(innerW).MaxWidth(innerW).Render(lf.title)
+		// One line, always: collapse newlines and let MaxWidth truncate. A
+		// Width() here would *wrap* an over-long title into 2+ lines and blow
+		// the pane's height.
+		flat := strings.ReplaceAll(lf.title, "\n", " ")
+		head = titleStyle.MaxWidth(innerW).Inline(true).Render(flat)
 		bodyH = innerH - 1
 	}
 
 	// scrollBox returns exactly bodyH lines, but JoinVertical(head, "") is two
-	// lines — so when the title eats the last row, render the title alone. Never
-	// clamp with MaxHeight here: it would trim the border too.
+	// lines — so when the title eats the last row, render the title alone.
 	var content string
 	switch {
 	case head == "":
@@ -230,6 +234,10 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 	default:
 		content = head
 	}
+	// Defensive clamp: content must be exactly innerH lines before we add a
+	// border. MaxHeight on the bordered style can't do this — it would trim the
+	// border itself.
+	content = clampLines(content, innerH)
 
 	// lipgloss Width/Height size the content area; a border adds 2 cells on
 	// each axis outside that. So the bordered box uses innerW/innerH (== w-2 /
@@ -261,3 +269,15 @@ func (m *Model) Focused() string {
 
 // PaneCount reports the number of leaves.
 func (m *Model) PaneCount() int { return len(m.leaves) }
+
+// clampLines trims s to at most n lines (never pads — lipgloss Height does that).
+func clampLines(s string, n int) string {
+	if n < 1 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n")
+}
