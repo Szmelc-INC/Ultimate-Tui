@@ -16,25 +16,32 @@ import (
 
 // Actions a keybinding can name.
 const (
-	actQuit      = "quit"
-	actFocusNext = "focus-next"
-	actFocusPrev = "focus-prev"
-	actHelp      = "help"
-	actSettings  = "settings"
-	actControl   = "control"
-	actContext   = "context-menu"
-	actLock      = "lock"
-	actUnlock    = "unlock"
-	actZoomIn    = "zoom-in"
-	actZoomOut   = "zoom-out"
-	actZoomReset = "zoom-reset"
+	actQuit        = "quit"
+	actFocusNext   = "focus-next"
+	actFocusPrev   = "focus-prev"
+	actHelp        = "help"
+	actSettings    = "settings"
+	actControl     = "control"
+	actContext     = "context-menu"
+	actLock        = "lock"
+	actUnlock      = "unlock"
+	actZoomIn      = "zoom-in"
+	actZoomOut     = "zoom-out"
+	actZoomReset   = "zoom-reset"
+	actResizeUp    = "resize-up"
+	actResizeDown  = "resize-down"
+	actResizeLeft  = "resize-left"
+	actResizeRight = "resize-right"
+	actSwapUp      = "swap-up"
+	actSwapDown    = "swap-down"
+	actSwapLeft    = "swap-left"
+	actSwapRight   = "swap-right"
+	actFlipSplit   = "flip-split"
 )
 
-// zoom bias bounds, in steps (one step == zoomStep cells, see layout.go).
-const (
-	zoomMin = -3
-	zoomMax = 8
-)
+// contentZoomMax bounds mod+= (see actZoomIn) — the low end is always 0,
+// "smaller than one cell" has no meaning for text.
+const contentZoomMax = 4
 
 // baseBinds are merged under the global options and the TUI config (config
 // wins). "mod+" is expanded to the configured modifier before use. Ctrl+C is
@@ -45,14 +52,34 @@ var baseBinds = map[string]string{
 	"shift+tab": actFocusPrev,
 	"f1":        actHelp,
 	"f2":        actControl,
-	// Per-pane zoom. The modifier makes these global (NAV and LOCKED alike);
-	// "instead of Ctrl" because Ctrl +/- is the terminal's own font zoom.
-	// Both "=" and "+" are bound so an unshifted or shifted key both work.
+	// Per-pane content zoom: scales what a widget draws (a text pane's
+	// glyphs), independent of the pane's own rectangle — see widget.Zoomer.
+	// This is NOT pane resize (that's mod+arrows below); mixing the two up
+	// was the point-10 bug this split fixes. Both "=" and "+" are bound so an
+	// unshifted or shifted key both work.
 	"mod+=": actZoomIn,
 	"mod++": actZoomIn,
 	"mod+-": actZoomOut,
 	"mod+_": actZoomOut,
 	"mod+0": actZoomReset,
+	// Pane resize: grows the focused pane toward the arrow's edge, taking the
+	// space from whichever sibling sits there (see resize.go). Directional,
+	// unlike the old zoom-as-size behaviour this replaces.
+	"mod+up":    actResizeUp,
+	"mod+down":  actResizeDown,
+	"mod+left":  actResizeLeft,
+	"mod+right": actResizeRight,
+	// Pane swap: exchanges the focused pane with its neighbor in that
+	// direction (same split-level neighbor resize would grow into).
+	"mod+shift+up":    actSwapUp,
+	"mod+shift+down":  actSwapDown,
+	"mod+shift+left":  actSwapLeft,
+	"mod+shift+right": actSwapRight,
+	// Flip the focused pane's enclosing split between row/column. Only fires
+	// via the global-key path (isGlobalKey) — handleEditorKey checks
+	// "mod+s"/"ctrl+s" itself before the editor overlay ever reaches here, so
+	// there is no collision with the editor's own save binding.
+	"mod+s": actFlipSplit,
 	// Right-click equivalent: open the focused pane's context menu.
 	"mod+w": actContext,
 }
@@ -95,14 +122,30 @@ type leaf struct {
 	parent *config.Child
 	split  *config.Node
 
-	// zoom is a per-pane size bias in steps: positive grows this pane at its
-	// siblings' expense in every ancestor split, negative shrinks it. Applied
-	// as a sum-preserving post-pass in render() (see shiftZoom).
-	zoom int
+	// chain is the sequence of ancestor splits from the root down to (not
+	// including) this leaf, each paired with the child index the path to
+	// this leaf takes through it. Built fresh by every build() call (see
+	// resize.go); used to find the nearest enclosing split whose axis
+	// matches an arrow direction for resize / swap. Empty for the root leaf.
+	chain []ancestorLink
+
+	// contentZoom is a per-pane content-scale level (0 = unscaled), driven by
+	// mod+=/-/0 and forwarded to the widget through the optional
+	// widget.Zoomer interface. This is NOT the pane's rectangle size — that
+	// is mod+arrows (resize.go). A widget that doesn't implement Zoomer
+	// simply ignores it.
+	contentZoom int
 
 	// absolute rectangle from the last render, for mouse hit-testing and
 	// directional focus movement.
 	x, y, pw, ph int
+}
+
+// ancestorLink is one step in a leaf's chain: the split node and which of
+// its children (by index) the path to the leaf goes through.
+type ancestorLink struct {
+	split *config.Node
+	idx   int
 }
 
 // Model is the root bubbletea model.
@@ -154,6 +197,13 @@ type Model struct {
 
 	rectW, rectH int // body size the leaf rectangles were computed at
 
+	// ovSplit state (split.go): the context menu's Split row and the "New
+	// pane" row (right-click on dead space) both land here.
+	spTarget int    // leaf index the split applies to; -1 = wrap the whole root ("New")
+	spDir    string // "row" (side by side) or "column" (stacked)
+	spPct    int    // percent kept by the original content; the new pane gets the rest
+	spField  int    // 0 = direction control, 1 = percent control
+
 	cfg *config.Config // the config this Model was built from (editor target)
 }
 
@@ -187,7 +237,7 @@ func NewWithOptions(cfg *config.Config, opts Options) (*Model, error) {
 	put(cfg.Keybindings)
 	m.tuiKeys = cfg.Keybindings
 
-	root, err := m.build(&cfg.Layout, nil, nil, "layout")
+	root, err := m.build(&cfg.Layout, nil, nil, "layout", nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -206,11 +256,30 @@ func expandMod(key, mod string) string {
 	return key
 }
 
-func (m *Model) build(n *config.Node, parent *config.Child, split *config.Node, path string) (node, error) {
+// build walks a config subtree into an engine node/leaf tree, appending each
+// leaf to m.leaves in tree order. carry (nil on the very first build, from
+// NewWithOptions) is a *config.Pane -> old-leaf map used by rebuild() to
+// carry a live widget over a structural edit instead of respawning it — a
+// Split must not restart the pane it split, a resize must not touch a widget
+// at all. When carry supplies no entry, a fresh widget is built and, if fresh
+// is non-nil, appended to it so the caller can batch its Init command (the
+// program-start path already Init()s every leaf itself; only a rebuild after
+// the program is running needs this).
+func (m *Model) build(n *config.Node, parent *config.Child, split *config.Node, path string, carry map[*config.Pane]*leaf, fresh *[]widget.Widget, chain []ancestorLink) (node, error) {
 	if n.Pane != nil {
-		w, err := widget.New(n.Pane)
-		if err != nil {
-			return node{}, fmt.Errorf("%s: %w", path, err)
+		old, carried := carry[n.Pane]
+		var w widget.Widget
+		if carried {
+			w = old.w
+		} else {
+			var err error
+			w, err = widget.New(n.Pane)
+			if err != nil {
+				return node{}, fmt.Errorf("%s: %w", path, err)
+			}
+			if fresh != nil {
+				*fresh = append(*fresh, w)
+			}
 		}
 		lf := &leaf{
 			title:  n.Pane.Title,
@@ -219,6 +288,10 @@ func (m *Model) build(n *config.Node, parent *config.Child, split *config.Node, 
 			pane:   n.Pane,
 			parent: parent,
 			split:  split,
+			chain:  chain,
+		}
+		if carried {
+			lf.contentZoom = old.contentZoom
 		}
 		m.leaves = append(m.leaves, lf)
 		return node{leaf: lf}, nil
@@ -231,7 +304,14 @@ func (m *Model) build(n *config.Node, parent *config.Child, split *config.Node, 
 	out := node{direction: dir, cfg: n}
 	for i := range n.Children {
 		ch := &n.Children[i]
-		sub, err := m.build(&ch.Node, ch, n, fmt.Sprintf("%s.children[%d]", path, i))
+		// Always copy: chain is shared with every sibling built so far, and
+		// append() may otherwise write into a backing array a sibling's leaf
+		// already stored a slice header into.
+		childChain := make([]ancestorLink, len(chain)+1)
+		copy(childChain, chain)
+		childChain[len(chain)] = ancestorLink{split: n, idx: i}
+
+		sub, err := m.build(&ch.Node, ch, n, fmt.Sprintf("%s.children[%d]", path, i), carry, fresh, childChain)
 		if err != nil {
 			return node{}, err
 		}
@@ -318,6 +398,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleContextKey(msg)
 	case ovEditor:
 		return m.handleEditorKey(msg)
+	case ovSplit:
+		return m.handleSplitKey(msg)
 	}
 
 	// Global bindings win unconditionally.
@@ -430,15 +512,46 @@ func (m *Model) runAction(action string) (tea.Model, tea.Cmd) {
 	case actUnlock:
 		m.locked, m.pendingEsc = false, false
 	case actZoomIn:
-		lf := m.leaves[m.focus]
-		lf.zoom = clampInt(lf.zoom+1, zoomMin, zoomMax)
+		m.setContentZoom(m.focus, m.leaves[m.focus].contentZoom+1)
 	case actZoomOut:
-		lf := m.leaves[m.focus]
-		lf.zoom = clampInt(lf.zoom-1, zoomMin, zoomMax)
+		m.setContentZoom(m.focus, m.leaves[m.focus].contentZoom-1)
 	case actZoomReset:
-		m.leaves[m.focus].zoom = 0
+		m.setContentZoom(m.focus, 0)
+	case actResizeUp:
+		m.resizeFocused(dirUp)
+	case actResizeDown:
+		m.resizeFocused(dirDown)
+	case actResizeLeft:
+		m.resizeFocused(dirLeft)
+	case actResizeRight:
+		m.resizeFocused(dirRight)
+	case actSwapUp:
+		return m, m.swapFocused(dirUp)
+	case actSwapDown:
+		return m, m.swapFocused(dirDown)
+	case actSwapLeft:
+		return m, m.swapFocused(dirLeft)
+	case actSwapRight:
+		return m, m.swapFocused(dirRight)
+	case actFlipSplit:
+		m.flipFocusedSplit()
 	}
 	return m, nil
+}
+
+// setContentZoom clamps and applies a per-pane content-zoom level, forwarding
+// it to the widget if it implements widget.Zoomer (see actZoomIn/-Out/-Reset
+// above). Widgets that don't implement it simply ignore zoom — there is no
+// generic way to scale a pty's own cell output.
+func (m *Model) setContentZoom(idx, level int) {
+	if idx < 0 || idx >= len(m.leaves) {
+		return
+	}
+	lf := m.leaves[idx]
+	lf.contentZoom = clampInt(level, 0, contentZoomMax)
+	if z, ok := lf.w.(widget.Zoomer); ok {
+		z.SetZoom(lf.contentZoom)
+	}
 }
 
 // focusDir moves focus to the nearest pane in a direction. It uses the leaf
@@ -512,11 +625,15 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	i := m.leafAt(msg.X, msg.Y)
-	if i < 0 {
+	if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
+		// i < 0 is dead space (the status bar row is the only such spot —
+		// the pane tree tiles the rest of the body exactly): open the "New
+		// pane" menu instead of a per-pane one. openContext(-1) is a no-op
+		// if that ever changes and there truly is nothing there.
+		m.openContext(i) // target captured as ctxLeaf; focus is left where it is
 		return m, nil
 	}
-	if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
-		m.openContext(i) // target captured as ctxLeaf; focus is left where it is
+	if i < 0 {
 		return m, nil
 	}
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
@@ -592,6 +709,8 @@ func (m *Model) View() string {
 		out = m.renderContext(out)
 	case ovEditor:
 		out = m.renderEditor(out)
+	case ovSplit:
+		out = m.renderSplit(out)
 	}
 	return out
 }
@@ -623,19 +742,6 @@ func (m *Model) render(n node, x, y, w, h int) string {
 		axis = w
 	}
 	sizes := distribute(specs, axis)
-
-	// Fold in per-pane zoom: a child whose subtree holds a zoomed leaf grows
-	// (or shrinks) by that bias, siblings absorb the opposite, total unchanged.
-	bias := make([]int, len(n.children))
-	zoomed := false
-	for i, c := range n.children {
-		if bias[i] = zoomCells(c.node); bias[i] != 0 {
-			zoomed = true
-		}
-	}
-	if zoomed {
-		sizes = shiftZoom(sizes, bias)
-	}
 
 	parts := make([]string, len(n.children))
 	off := 0

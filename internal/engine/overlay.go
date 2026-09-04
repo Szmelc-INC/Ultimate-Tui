@@ -19,6 +19,7 @@ const (
 	ovControl
 	ovContext
 	ovEditor
+	ovSplit
 )
 
 // confirmKind is what a confirmed (y / Enter) confirm dialog does.
@@ -28,6 +29,7 @@ const (
 	cfQuit    confirmKind = iota // end the program
 	cfKill                       // stop the focused pane's process
 	cfDiscard                    // leave the editor with unsaved edits
+	cfClose                      // remove a pane from the layout
 )
 
 func (m *Model) overlayActive() bool { return m.overlay != ovNone }
@@ -94,6 +96,10 @@ func (m *Model) confirmYes() (tea.Model, tea.Cmd) {
 	case cfDiscard:
 		m.closeEditor()
 		return m, nil
+	case cfClose:
+		cmd := m.closeLeaf(m.confirmLeaf)
+		m.locked, m.pendingEsc = false, false
+		return m, cmd
 	}
 	return m, nil
 }

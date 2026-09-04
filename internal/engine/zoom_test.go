@@ -6,46 +6,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/silverx/ultimate-tui/internal/config"
+	"github.com/silverx/ultimate-tui/internal/widget"
 )
 
-func TestShiftZoomPreservesSum(t *testing.T) {
-	cases := []struct {
-		name  string
-		sizes []int
-		bias  []int
-	}{
-		{"grow first of two", []int{40, 60}, []int{9, 0}},
-		{"shrink middle of three", []int{30, 30, 40}, []int{0, -6, 0}},
-		{"two zoomed opposite", []int{25, 25, 25, 25}, []int{9, 0, 0, -9}},
-		{"bias exceeds room", []int{50, 6}, []int{40, 0}},
-		{"single child no-op", []int{80}, []int{9}},
-		{"tiny container", []int{4, 4, 4}, []int{6, 0, 0}},
-	}
-	for _, tc := range cases {
-		want := 0
-		for _, s := range tc.sizes {
-			want += s
-		}
-		got := shiftZoom(tc.sizes, tc.bias)
-		total := 0
-		for _, v := range got {
-			total += v
-			if v < 0 {
-				t.Errorf("%s: negative slot in %v", tc.name, got)
-			}
-		}
-		if total != want {
-			t.Errorf("%s: sum(%v) = %d, want %d", tc.name, got, total, want)
-		}
-	}
-}
+// recZoomWidget records every SetZoom call — used to pin that mod+=/-/0
+// reaches the widget through widget.Zoomer, not that it resizes the pane
+// (that's resize_test.go now; see item 10 in the request that split this).
+type recZoomWidget struct{ zoom int }
 
-func TestShiftZoomActuallyGrows(t *testing.T) {
-	got := shiftZoom([]int{50, 50}, []int{9, 0})
-	if got[0] <= 50 || got[1] >= 50 {
-		t.Fatalf("zoom did not grow slot 0 at slot 1's expense: %v", got)
-	}
-}
+func (r *recZoomWidget) Init() tea.Cmd                           { return nil }
+func (r *recZoomWidget) Update(tea.Msg) (widget.Widget, tea.Cmd) { return r, nil }
+func (r *recZoomWidget) View(w, h int) string                    { return "" }
+func (r *recZoomWidget) SetZoom(level int)                       { r.zoom = level }
 
 const zoomGridSrc = `{
   "name": "grid",
@@ -61,9 +33,53 @@ const zoomGridSrc = `{
   ]}
 }`
 
-// The whole zoom feature rests on bubbletea encoding Alt+= as "alt+=" so the
-// "mod+=" baseBind resolves. Drive the real key path, not just the helper.
-func TestZoomBindingBiasesFocusedPane(t *testing.T) {
+// The whole content-zoom feature rests on bubbletea encoding Alt+= as
+// "alt+=" so the "mod+=" baseBind resolves. Drive the real key path.
+func TestContentZoomBindingUpdatesLeafAndWidget(t *testing.T) {
+	cfg, err := config.Parse([]byte(zoomGridSrc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewWithOptions(cfg, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = u.(*Model)
+
+	fake := &recZoomWidget{}
+	m.leaves[m.focus].w = fake
+
+	press := func(r rune) {
+		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: true})
+		m = u.(*Model)
+	}
+
+	press('=')
+	press('=')
+	if z := m.leaves[m.focus].contentZoom; z != 2 {
+		t.Fatalf("alt+= x2: contentZoom = %d, want 2", z)
+	}
+	if fake.zoom != 2 {
+		t.Fatalf("widget did not receive SetZoom(2): got %d", fake.zoom)
+	}
+	press('-')
+	if z := m.leaves[m.focus].contentZoom; z != 1 {
+		t.Fatalf("alt+-: contentZoom = %d, want 1", z)
+	}
+	press('0')
+	if z := m.leaves[m.focus].contentZoom; z != 0 {
+		t.Fatalf("alt+0: contentZoom = %d, want 0", z)
+	}
+	if fake.zoom != 0 {
+		t.Fatalf("widget did not receive SetZoom(0): got %d", fake.zoom)
+	}
+}
+
+// Content zoom must never touch pane geometry — the frame stays exactly
+// 80x24 regardless of how far a pane is zoomed, since it's the same rectangle
+// rendering bigger (or unscaled) glyphs, not a bigger rectangle.
+func TestContentZoomNeverResizesTheFrame(t *testing.T) {
 	cfg, err := config.Parse([]byte(zoomGridSrc))
 	if err != nil {
 		t.Fatal(err)
@@ -79,29 +95,36 @@ func TestZoomBindingBiasesFocusedPane(t *testing.T) {
 		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: true})
 		m = u.(*Model)
 	}
-
-	press('=')
-	press('=')
-	if z := m.leaves[m.focus].zoom; z != 2 {
-		t.Fatalf("alt+= x2: focused zoom = %d, want 2", z)
-	}
-	press('-')
-	if z := m.leaves[m.focus].zoom; z != 1 {
-		t.Fatalf("alt+-: focused zoom = %d, want 1", z)
-	}
-	press('0')
-	if z := m.leaves[m.focus].zoom; z != 0 {
-		t.Fatalf("alt+0: focused zoom = %d, want 0", z)
-	}
-
-	// The zoomed frame must still be exactly 80x24 — no shearing.
 	press('=')
 	press('=')
 	press('=')
 	v := m.View()
-	lines := splitLines(v)
-	if len(lines) != 24 {
+	if lines := splitLines(v); len(lines) != 24 {
 		t.Fatalf("zoomed frame height = %d, want 24", len(lines))
+	}
+}
+
+// The text widget is the one built-in Zoomer: SetZoom must actually change
+// what it renders (big block glyphs), not just record a number.
+func TestTextWidgetZoomChangesRenderedContent(t *testing.T) {
+	w, err := widget.New(&config.Pane{Type: "text", Content: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, ok := w.(widget.Zoomer)
+	if !ok {
+		t.Fatal("text widget does not implement widget.Zoomer")
+	}
+	before := w.View(40, 10)
+	z.SetZoom(2)
+	after := w.View(40, 10)
+	if before == after {
+		t.Fatal("SetZoom(2) did not change the rendered content")
+	}
+	z.SetZoom(0)
+	reset := w.View(40, 10)
+	if reset != before {
+		t.Fatal("SetZoom(0) did not restore the original rendering")
 	}
 }
 

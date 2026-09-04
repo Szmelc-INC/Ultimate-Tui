@@ -10,12 +10,15 @@ import (
 	"github.com/silverx/ultimate-tui/internal/engine"
 )
 
-// openEditor: right-click / mod+w on the focused pane, then Enter on the menu
-// (the cursor sits on "Edit" because the process rows are greyed for a text pane).
+// openEditor: right-click / mod+w on the focused pane, jump to the menu's
+// last row ("End" — Edit is always last and always enabled, unlike Close
+// which greys out on a single-pane layout) and Enter.
 func openEditor(t *testing.T, m *engine.Model) *engine.Model {
 	t.Helper()
 	_ = m.View()
 	u, _ := m.Update(modKey('w'))
+	m = u.(*engine.Model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	m = u.(*engine.Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	return u.(*engine.Model)

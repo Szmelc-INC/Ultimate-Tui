@@ -77,13 +77,14 @@ func TestContextMenuGreysUnsupportedActions(t *testing.T) {
 	m := newModel(t, ctxSrc, 90, 26)
 	_ = m.View()
 
-	// text pane: Stop/Restart/Refresh unsupported -> Enter lands on "Edit".
+	// text pane: Stop/Restart/Refresh unsupported -> Enter skips them and
+	// lands on the first enabled row, "Split".
 	u, _ := m.Update(modKey('w'))
 	m = u.(*engine.Model)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(*engine.Model)
-	if !strings.Contains(m.View(), "edit · Note") {
-		t.Fatalf("Enter on the text pane's menu did not open the editor (cursor should skip greyed rows):\n%s", m.View())
+	if !strings.Contains(m.View(), "split · Note") {
+		t.Fatalf("Enter on the text pane's menu did not open the split prompt (cursor should skip greyed rows):\n%s", m.View())
 	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(*engine.Model)

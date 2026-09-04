@@ -15,10 +15,18 @@ import (
 //	Stop    — kill the pane's process (via the shared kill-confirm dialog)
 //	Restart — tear the process down and spawn it again
 //	Refresh — force a repaint without a restart
+//	Split   — open the split prompt (direction + %), dividing this pane in two
+//	Close   — remove this pane (via a confirm dialog); disabled on the last pane
 //	Edit    — open the pane editor
 //
+// Right-clicking dead space (there is exactly one such spot: the status bar
+// row — the pane tree tiles the rest of the body exactly) opens a one-item
+// menu instead: New pane, which wraps the whole layout in a fresh split. Its
+// target is ctxLeaf == -1, the one place besides a valid leaf index that
+// openContext accepts.
+//
 // Stop/Restart/Refresh are greyed out for a widget that does not implement the
-// matching optional interface; Edit is always available.
+// matching optional interface; Split and Edit are always available.
 
 type ctxAction int
 
@@ -26,7 +34,10 @@ const (
 	ctxStop ctxAction = iota
 	ctxRestart
 	ctxRefresh
+	ctxSplit
+	ctxClose
 	ctxEdit
+	ctxNew
 )
 
 type ctxItem struct {
@@ -36,8 +47,11 @@ type ctxItem struct {
 }
 
 func (m *Model) contextItems(idx int) []ctxItem {
+	if idx < 0 {
+		return []ctxItem{{"New pane", ctxNew, true}}
+	}
 	var w widget.Widget
-	if idx >= 0 && idx < len(m.leaves) {
+	if idx < len(m.leaves) {
 		w = m.leaves[idx].w
 	}
 	_, canStop := w.(widget.Interrupter)
@@ -47,12 +61,16 @@ func (m *Model) contextItems(idx int) []ctxItem {
 		{"Stop", ctxStop, canStop},
 		{"Restart", ctxRestart, canRestart},
 		{"Refresh", ctxRefresh, canRefresh},
+		{"Split", ctxSplit, true},
+		{"Close", ctxClose, len(m.leaves) > 1},
 		{"Edit", ctxEdit, true},
 	}
 }
 
+// openContext opens the menu for leaf idx, or the "New pane" menu for dead
+// space when idx is -1 (see contextItems).
 func (m *Model) openContext(idx int) {
-	if idx < 0 || idx >= len(m.leaves) {
+	if idx < -1 || idx >= len(m.leaves) {
 		return
 	}
 	m.overlay = ovContext
@@ -63,6 +81,15 @@ func (m *Model) openContext(idx int) {
 func ctxFirstEnabled(items []ctxItem) int {
 	for i, it := range items {
 		if it.enabled {
+			return i
+		}
+	}
+	return 0
+}
+
+func ctxLastEnabled(items []ctxItem) int {
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].enabled {
 			return i
 		}
 	}
@@ -95,6 +122,8 @@ func (m *Model) handleContextKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ctxRow = ctxStepRow(items, m.ctxRow, +1)
 	case "home", "g":
 		m.ctxRow = ctxFirstEnabled(items)
+	case "end", "G":
+		m.ctxRow = ctxLastEnabled(items)
 	case "enter", " ", "l", "right":
 		if m.ctxRow >= 0 && m.ctxRow < len(items) && items[m.ctxRow].enabled {
 			return m.runContextAction(items[m.ctxRow].act)
@@ -104,6 +133,12 @@ func (m *Model) handleContextKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) runContextAction(a ctxAction) (tea.Model, tea.Cmd) {
+	if a == ctxNew {
+		m.overlayReturn = ovNone
+		m.openSplitPrompt(-1)
+		return m, nil
+	}
+
 	idx := m.ctxLeaf
 	if idx < 0 || idx >= len(m.leaves) {
 		m.overlay = ovNone
@@ -124,6 +159,13 @@ func (m *Model) runContextAction(a ctxAction) (tea.Model, tea.Cmd) {
 		if r, ok := lf.w.(widget.Refresher); ok {
 			return m, r.Refresh()
 		}
+	case ctxSplit:
+		m.overlayReturn = ovNone
+		m.openSplitPrompt(idx)
+	case ctxClose:
+		if len(m.leaves) > 1 {
+			return m.openConfirmClose(idx, m.leafName(idx))
+		}
 	case ctxEdit:
 		m.overlayReturn = ovNone // Esc from the editor returns to the bare frame
 		m.openPaneEditor(idx)
@@ -139,8 +181,12 @@ func (m *Model) contextPanel() string {
 	th := m.theme()
 	items := m.contextItems(m.ctxLeaf)
 
+	title := "pane · " + m.leafName(m.ctxLeaf)
+	if m.ctxLeaf < 0 {
+		title = "empty space"
+	}
 	var b strings.Builder
-	b.WriteString(th.helpTitle.Render("pane · " + m.leafName(m.ctxLeaf)))
+	b.WriteString(th.helpTitle.Render(title))
 	b.WriteString("\n\n")
 	for i, it := range items {
 		switch {

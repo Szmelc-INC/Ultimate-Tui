@@ -76,6 +76,17 @@ type ScrollProgress interface {
 	ScrollFraction() float64
 }
 
+// Zoomer is an optional interface for a widget that can scale its own
+// content independent of its pane's rectangle — mod+=/-/0 on the focused
+// pane, distinct from mod+arrows which resizes the pane itself. Level 0 is
+// the unscaled baseline and is never negative ("smaller than one cell" has
+// no meaning); the engine clamps and calls SetZoom only when the level
+// actually changes. A widget that doesn't implement this simply ignores
+// zoom — there is no generic way to magnify a pty's own cell output.
+type Zoomer interface {
+	SetZoom(level int)
+}
+
 // Factory builds a widget from its pane config.
 type Factory func(*config.Pane) (Widget, error)
 
