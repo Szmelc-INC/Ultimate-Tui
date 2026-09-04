@@ -93,6 +93,27 @@ func TestUnknownWidgetRejected(t *testing.T) {
 	}
 }
 
+func TestTitledHeaderPaneKeepsFrameHeight(t *testing.T) {
+	// A fixed 3-row bordered+titled header above a flex pane: the title must
+	// not push the body past its allotment. Also exercises innerH==1.
+	src := `{
+      "name": "header",
+      "layout": {
+        "direction": "column",
+        "children": [
+          { "size": "3", "pane": { "type": "text", "title": "header", "content": "x" } },
+          { "size": "*", "pane": { "type": "text", "title": "body",   "content": "y" } }
+        ]
+      }
+    }`
+	for _, h := range []int{12, 8, 6} {
+		m := newModel(t, src, 40, h)
+		if got := len(strings.Split(m.View(), "\n")); got != h {
+			t.Fatalf("height %d: rendered %d lines\n%s", h, got, m.View())
+		}
+	}
+}
+
 func TestNestedColumnSplit(t *testing.T) {
 	src := `{
       "name": "nested",

@@ -217,10 +217,18 @@ func (m *Model) renderLeaf(lf *leaf, w, h int) string {
 		head = titleStyle.Width(innerW).MaxWidth(innerW).Render(lf.title)
 		bodyH = innerH - 1
 	}
-	body := lf.w.View(innerW, bodyH)
-	content := body
-	if head != "" {
-		content = lipgloss.JoinVertical(lipgloss.Left, head, body)
+
+	// scrollBox returns exactly bodyH lines, but JoinVertical(head, "") is two
+	// lines — so when the title eats the last row, render the title alone. Never
+	// clamp with MaxHeight here: it would trim the border too.
+	var content string
+	switch {
+	case head == "":
+		content = lf.w.View(innerW, innerH)
+	case bodyH >= 1:
+		content = lipgloss.JoinVertical(lipgloss.Left, head, lf.w.View(innerW, bodyH))
+	default:
+		content = head
 	}
 
 	// lipgloss Width/Height size the content area; a border adds 2 cells on

@@ -55,6 +55,32 @@ func TestRejectsEmptyNode(t *testing.T) {
 	}
 }
 
+func TestRejectsPercentOverflow(t *testing.T) {
+	_, err := config.Parse([]byte(`{
+      "name": "x",
+      "layout": { "direction": "row", "children": [
+        { "size": "60%", "pane": { "type": "text" } },
+        { "size": "60%", "pane": { "type": "text" } }
+      ]}
+    }`))
+	if err == nil || !strings.Contains(err.Error(), "100") {
+		t.Fatalf("want percent-overflow error, got %v", err)
+	}
+}
+
+func TestAllowsPercentExactly100(t *testing.T) {
+	_, err := config.Parse([]byte(`{
+      "name": "x",
+      "layout": { "direction": "row", "children": [
+        { "size": "50%", "pane": { "type": "text" } },
+        { "size": "50%", "pane": { "type": "text" } }
+      ]}
+    }`))
+	if err != nil {
+		t.Fatalf("100%% total should be valid: %v", err)
+	}
+}
+
 func TestRejectsMissingName(t *testing.T) {
 	_, err := config.Parse([]byte(`{"layout":{"pane":{"type":"text"}}}`))
 	if err == nil || !strings.Contains(err.Error(), "name") {

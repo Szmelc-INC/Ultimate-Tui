@@ -1,7 +1,7 @@
 # LLM.md — ULTIMATE TUI, compressed for coding agents
 
-Status: MVP. Go module `github.com/silverx/ultimate-tui`, Go 1.26. Deps:
-bubbletea, lipgloss, bubbles (bubbles not used yet). No plugin system by design.
+Status: MVP. Go module `github.com/silverx/ultimate-tui`, Go 1.26. Direct deps:
+bubbletea, lipgloss only. No plugin system by design.
 
 ## Package map
 
@@ -34,7 +34,8 @@ live `widget.Widget`. `m.leaves` is the tree-order focus ring; `m.focus` indexes
   instantiating widgets and appending to `m.leaves`.
 - `Update`: `WindowSizeMsg`→store size+`ready`. `KeyMsg`→ if key in `m.keys`
   run action (`quit`/`focus-next`/`focus-prev`); else forward to focused widget.
-  Any other msg → broadcast to all widgets (async results, mouse).
+  Any other msg → broadcast to all widgets (async cmd results; future mouse).
+  Mouse reporting is OFF in `run.go` (breaks text selection, nothing consumes it).
 - `View`/`render`: recurse; split→`distribute` axis cells→render children→
   `lipgloss.JoinHorizontal/Vertical`. leaf→`renderLeaf`.
 - `renderLeaf`: inner = w-2/h-2 if bordered. Optional title line (costs 1 body
@@ -75,7 +76,8 @@ per-pane options blob and decode in the factory.
 
 - `Parse` is the only format-aware code.
 - Engine imports widget+config; widget imports config; config imports neither.
-- Every split should contain a flex child; layout does not error on overflow, it
-  clamps to 0 and may look wrong.
+- Every split should contain a flex child; layout does not error on fixed-cell
+  overflow, it clamps to 0 and may look wrong. `Validate` DOES reject a split
+  whose child percentages sum > 100.
 - Global keybindings win over widget keys — a config can't currently *unbind* a
   default, only remap the same key.

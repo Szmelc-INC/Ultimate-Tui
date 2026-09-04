@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -110,10 +111,19 @@ func validateNode(n *Node, path string) error {
 		if n.Direction != "" && n.Direction != "row" && n.Direction != "column" {
 			return fmt.Errorf("%s: direction %q is not \"row\" or \"column\"", path, n.Direction)
 		}
+		pctTotal := 0.0
 		for i := range n.Children {
+			if s := strings.TrimSpace(n.Children[i].Size); strings.HasSuffix(s, "%") {
+				if v, err := strconv.ParseFloat(strings.TrimSuffix(s, "%"), 64); err == nil {
+					pctTotal += v
+				}
+			}
 			if err := validateNode(&n.Children[i].Node, fmt.Sprintf("%s.children[%d]", path, i)); err != nil {
 				return err
 			}
+		}
+		if pctTotal > 100.0001 {
+			return fmt.Errorf("%s: child percentage sizes sum to %.0f%% (must be <= 100)", path, pctTotal)
 		}
 		return nil
 	}

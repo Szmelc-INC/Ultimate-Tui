@@ -14,6 +14,9 @@ func Run(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	_, err = tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	// No WithMouseCellMotion yet: enabling mouse reporting breaks terminal
+	// text selection, and nothing consumes tea.MouseMsg until click-to-focus
+	// lands. Turn it on together with that feature.
+	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
