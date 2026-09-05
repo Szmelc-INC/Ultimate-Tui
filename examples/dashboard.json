@@ -2,41 +2,29 @@
   "name": "system-dashboard",
   "version": "0.1.0",
   "keybindings": {
-    "1": "focus-next",
-    "0": "focus-prev"
+    "0": "focus-prev",
+    "1": "focus-next"
   },
   "layout": {
-    "direction": "row",
     "children": [
       {
-        "size": "28",
+        "size": "7%",
         "pane": {
-          "type": "text",
-          "title": "nav",
-          "content": "ULTIMATE TUI\n\n- overview\n- processes\n- disk\n- kernel\n\narrows / tab  focus\nenter / esc   lock / release\nF1           help\nF3           theme & style\nCtrl+C       quit"
+          "type": "shell",
+          "title": "cava",
+          "border": false,
+          "content": "ULTIMATE TUI\n\n- overview\n- processes\n- disk\n- kernel\n\narrows / tab  focus\nenter / esc   lock / release\nF1           help\nF3           theme \u0026 style\nCtrl+C       quit",
+          "command": "cava"
         }
       },
       {
-        "size": "*",
-        "direction": "column",
-        "children": [
-          {
-            "size": "40%",
-            "direction": "row",
-            "children": [
-              { "size": "50%", "pane": { "type": "command", "title": "host",   "command": "uname -sr; uptime" } },
-              { "size": "*",   "pane": { "type": "command", "title": "disk",   "command": "df -h / /home 2>/dev/null | cat" } }
-            ]
-          },
-          {
-            "size": "*",
-            "pane": {
-              "type": "command",
-              "title": "processes (top by rss)",
-              "command": "ps -eo pid,rss,comm --sort=-rss | head -n 20"
-            }
-          }
-        ]
+        "size": "93%",
+        "pane": {
+          "type": "shell",
+          "title": "New pane",
+          "border": true,
+          "command": "btop"
+        }
       }
     ]
   }
