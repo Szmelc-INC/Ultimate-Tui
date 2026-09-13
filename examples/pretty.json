@@ -1,12 +1,14 @@
 {
   "name": "pretty-print",
   "version": "0.1.0",
-  "keybindings": { "mod+l": "focus-next", "mod+h": "focus-prev" },
+  "keybindings": {
+    "mod+h": "focus-prev",
+    "mod+l": "focus-next"
+  },
   "layout": {
-    "direction": "column",
     "children": [
       {
-        "size": "8",
+        "size": "12%",
         "pane": {
           "type": "command",
           "border": false,
@@ -14,40 +16,41 @@
         }
       },
       {
-        "size": "*",
+        "size": "88%",
         "direction": "row",
         "children": [
           {
-            "size": "44%",
-            "direction": "column",
+            "size": "42%",
             "children": [
               {
-                "size": "*",
+                "size": "51%",
                 "pane": {
                   "type": "text",
                   "title": " unicode  ·  no ANSI needed",
+                  "border": true,
                   "content": "Box drawing:\n  ┌───┬───┐   ╔═══╦═══╗   ╭───┬───╮\n  │   │   │   ║   ║   ║   │   │   │\n  ├───┼───┤   ╠═══╬═══╣   ├───┼───┤\n  └───┴───┘   ╚═══╩═══╝   ╰───┴───╯\n\nBlocks / shading:\n  █▉▊▋▌▍▎▏  ░▒▓█  ▁▂▃▄▅▆▇█\n\nSparkline:  ▁▂▃▅▂▇▃▆▅▂▄▁▂▅▇▆▃▂▁▄▆\n\nBraille:  ⠁⠉⠙⠹⢸⣰⣤⣆⡇⠏⠛⠟\n\nGeometry:  ● ◐ ◑ ◒ ◓ ○  ◆ ◇  ▲ ▼ ◀ ▶  ★ ☆"
                 }
               },
               {
-                "size": "10",
+                "size": "49%",
                 "pane": {
                   "type": "command",
                   "title": " 256-colour ramp",
+                  "border": true,
                   "command": "for r in 16 52 88 124 160 196 202 208 214 220 226; do printf '\\033[48;5;%sm  \\033[0m' $r; done; echo; for r in 16 22 28 34 40 46 47 48 49 50 51; do printf '\\033[48;5;%sm  \\033[0m' $r; done; echo; for r in 16 17 18 19 20 21 27 33 39 45 51; do printf '\\033[48;5;%sm  \\033[0m' $r; done; echo; printf '\\033[38;5;208m●\\033[0m fg  \\033[1;35mbold\\033[0m  \\033[4munderline\\033[0m  \\033[7minverse\\033[0m'"
                 }
               }
             ]
           },
           {
-            "size": "*",
-            "direction": "column",
+            "size": "58%",
             "children": [
               {
                 "size": "45%",
                 "pane": {
                   "type": "command",
                   "title": " cowsay + fortune",
+                  "border": false,
                   "command": "fortune -s 2>/dev/null | cowsay -W 40 2>/dev/null | lolcat -f -p 2 2>/dev/null || echo 'install fortune/cowsay/lolcat'"
                 }
               },
@@ -56,6 +59,7 @@
                 "pane": {
                   "type": "command",
                   "title": " syntax highlight  (bat)",
+                  "border": true,
                   "command": "bat --color=always --style=numbers --line-range 1:26 internal/widget/widget.go 2>/dev/null || cat internal/widget/widget.go"
                 }
               }
