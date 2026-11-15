@@ -14,7 +14,7 @@
           pname = "ultui";
           version = "0.1.0-unstable-${self.shortRev or self.dirtyShortRev or "dirty"}";
           src = ./.;
-          vendorHash = pkgs.lib.fakeHash;
+          vendorHash = "sha256-dQ3OkcMtKUFNOawEW8knwzqmkTxtrp4A4WWj3vQPZ18=";
           subPackages = [ "." ];
           env.CGO_ENABLED = 0;
           ldflags = [ "-s" "-w" ];
