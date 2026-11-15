@@ -278,3 +278,24 @@ Not built yet, roughly in priority order:
 - `ultui compile` — codegen the wrapper + `go build` in one step
 - Shared borders between adjacent panes
 - Public `pkg/` API once it stabilises
+
+## Install
+
+[![nix](https://github.com/Szmelc-INC/Ultimate-Tui/actions/workflows/nix.yml/badge.svg)](https://github.com/Szmelc-INC/Ultimate-Tui/actions/workflows/nix.yml)
+
+**Arch Linux** via [SAUR](https://github.com/Szmelc-INC/SAUR):
+
+```sh
+curl -fsSL https://szmelc-inc.github.io/SAUR/add | sudo bash   # once: adds [saur] to pacman.conf
+sudo pacman -S ultui-git
+```
+
+**Nix**:
+
+```sh
+nix run github:Szmelc-INC/Ultimate-Tui
+nix profile install github:Szmelc-INC/Ultimate-Tui
+nix develop          # dev shell inside a clone
+```
+
+Then run `ultui --help`.
